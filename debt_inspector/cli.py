@@ -14,11 +14,19 @@ from datetime import datetime
 
 import typer
 from rich.console import Console
+from rich.prompt import Prompt
 
 from debt_inspector.models.debtor import SearchParams, SubjectType
 from debt_inspector.inspector import inspect
 from debt_inspector.processing.reporter import export_json, export_excel, print_report
 from debt_inspector.storage.cache import ResultCache
+from debt_inspector.auth import (
+    check_credentials,
+    save_session,
+    is_session_valid,
+    clear_session,
+    setup_credentials,
+)
 
 app = typer.Typer(
     name="debt-inspector",
@@ -26,6 +34,60 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+def _require_auth():
+    """Проверяет авторизацию. Если сессии нет — запрашивает логин/пароль."""
+    if is_session_valid():
+        return
+
+    console.print("[bold]Требуется авторизация[/bold]\n")
+    login = Prompt.ask("Логин")
+    password = Prompt.ask("Пароль", password=True)
+
+    if not check_credentials(login, password):
+        console.print("[red]Неверный логин или пароль[/red]")
+        raise typer.Exit(1)
+
+    save_session()
+    console.print("[green]Вход выполнен[/green]\n")
+
+
+@app.command()
+def login():
+    """Войти в систему."""
+    if is_session_valid():
+        console.print("[green]Вы уже авторизованы[/green]")
+        return
+
+    login_val = Prompt.ask("Логин")
+    password = Prompt.ask("Пароль", password=True)
+
+    if not check_credentials(login_val, password):
+        console.print("[red]Неверный логин или пароль[/red]")
+        raise typer.Exit(1)
+
+    save_session()
+    console.print("[green]Вход выполнен[/green]")
+
+
+@app.command()
+def logout():
+    """Выйти из системы."""
+    clear_session()
+    console.print("Сессия завершена.")
+
+
+@app.command()
+def passwd(
+    new_login: str = typer.Option(..., "--login", help="Новый логин"),
+    new_password: str = typer.Option(..., "--password", help="Новый пароль"),
+):
+    """Сменить логин и пароль."""
+    _require_auth()
+    setup_credentials(new_login, new_password)
+    clear_session()
+    console.print("[green]Логин и пароль изменены. Войдите заново.[/green]")
 
 
 @app.command()
@@ -40,6 +102,7 @@ def person(
     no_cache: bool = typer.Option(False, "--no-cache", help="Не сохранять в кеш"),
 ):
     """Поиск долгов физического лица."""
+    _require_auth()
     params = SearchParams(
         subject_type=SubjectType.PERSON,
         last_name=last_name,
@@ -62,6 +125,7 @@ def company(
     no_cache: bool = typer.Option(False, "--no-cache", help="Не сохранять в кеш"),
 ):
     """Поиск долгов юридического лица."""
+    _require_auth()
     if not name and not inn:
         console.print("[red]Укажите --name или --inn[/red]")
         raise typer.Exit(1)
@@ -84,6 +148,7 @@ def inn(
     no_cache: bool = typer.Option(False, "--no-cache", help="Не сохранять в кеш"),
 ):
     """Быстрый поиск по ИНН (авто-определение: физлицо/юрлицо)."""
+    _require_auth()
     subject_type = SubjectType.PERSON if len(inn_number) == 12 else SubjectType.COMPANY
 
     params = SearchParams(
@@ -101,6 +166,7 @@ def history(
     limit: int = typer.Option(10, "--limit", help="Кол-во записей"),
 ):
     """Показать историю проверок из кеша."""
+    _require_auth()
     if not inn_val and not name:
         console.print("[red]Укажите --inn или --name[/red]")
         raise typer.Exit(1)
