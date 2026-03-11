@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Результаты — Debt Inspector{% endblock %}
+{% block content %}
+
+<div class="card">
+    <h1>{{ report.search_params.display_name }}</h1>
+    <p style="color: #64748b; font-size: .85rem; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        Проверка: {{ report.checked_at.strftime('%d.%m.%Y %H:%M') }}
+    </p>
+
+    <!-- Сводка -->
+    <div class="stats">
+        <div class="stat-card">
+            <div class="number">{{ report.enforcements|length }}</div>
+            <div class="label">Исп. производств</div>
+        </div>
+        <div class="stat-card">
+            <div class="number">{{ "%.0f"|format(total_enforcement_debt) }}</div>
+            <div class="label">Долг по ИП (руб.)</div>
+        </div>
+        <div class="stat-card">
+            <div class="number">{{ report.court_cases|length }}</div>
+            <div class="label">Судебных дел</div>
+        </div>
+        <div class="stat-card">
+            {% if has_active_bankruptcy %}
+                <div class="number" style="color: #dc2626;">ДА</div>
+            {% else %}
+                <div class="number" style="color: #16a34a;">НЕТ</div>
+            {% endif %}
+            <div class="label">Банкротство</div>
+        </div>
+    </div>
+</div>
+
+<!-- Ошибки -->
+{% if report.errors %}
+<div class="card">
+    {% for err in report.errors %}
+        <div class="alert alert-warning">{{ err }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Исполнительные производства -->
+<div class="card">
+    <h2>Исполнительные производства (ФССП)</h2>
+    {% if report.enforcements %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Номер</th>
+                    <th>Дата</th>
+                    <th>Сумма</th>
+                    <th>Статус</th>
+                    <th>Предмет</th>
+                    <th>Взыскатель</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in report.enforcements %}
+                <tr>
+                    <td>{{ e.number or '—' }}</td>
+                    <td>{{ e.date_opened.strftime('%d.%m.%Y') if e.date_opened else '—' }}</td>
+                    <td style="white-space: nowrap;">{{ "%.2f"|format(e.amount) if e.amount else '—' }}</td>
+                    <td>
+                        {% if e.status.value == 'active' %}
+                            <span class="badge badge-red">активно</span>
+                        {% elif e.status.value == 'finished' %}
+                            <span class="badge badge-green">окончено</span>
+                        {% elif e.status.value == 'suspended' %}
+                            <span class="badge badge-yellow">приостановлено</span>
+                        {% else %}
+                            <span class="badge badge-gray">{{ e.status.value }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ (e.subject or '—')[:60] }}</td>
+                    <td>{{ e.claimant or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <p class="empty">Записей не найдено</p>
+    {% endif %}
+</div>
+
+<!-- Судебные дела -->
+<div class="card">
+    <h2>Судебные дела (КАД Арбитр)</h2>
+    {% if report.court_cases %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Дело</th>
+                    <th>Суд</th>
+                    <th>Дата</th>
+                    <th>Сумма</th>
+                    <th>Статус</th>
+                    <th>Истец</th>
+                    <th>Ответчик</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in report.court_cases %}
+                <tr>
+                    <td>
+                        {% if c.source_url %}
+                            <a href="{{ c.source_url }}" target="_blank">{{ c.case_number or '—' }}</a>
+                        {% else %}
+                            {{ c.case_number or '—' }}
+                        {% endif %}
+                    </td>
+                    <td>{{ (c.court_name or '—')[:30] }}</td>
+                    <td>{{ c.date_filed.strftime('%d.%m.%Y') if c.date_filed else '—' }}</td>
+                    <td style="white-space: nowrap;">{{ "%.2f"|format(c.amount) if c.amount else '—' }}</td>
+                    <td>
+                        {% if c.status.value == 'active' %}
+                            <span class="badge badge-red">активно</span>
+                        {% elif c.status.value == 'decided' %}
+                            <span class="badge badge-green">решено</span>
+                        {% else %}
+                            <span class="badge badge-gray">{{ c.status.value }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ (c.plaintiff or '—')[:25] }}</td>
+                    <td>{{ (c.defendant or '—')[:25] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <p class="empty">Записей не найдено</p>
+    {% endif %}
+</div>
+
+<!-- Банкротства -->
+<div class="card">
+    <h2>Банкротства (ЕФРСБ)</h2>
+    {% if report.bankruptcies %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Должник</th>
+                    <th>ИНН</th>
+                    <th>Дело</th>
+                    <th>Фаза</th>
+                    <th>Арб. управляющий</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in report.bankruptcies %}
+                <tr>
+                    <td>
+                        {% if b.source_url %}
+                            <a href="{{ b.source_url }}" target="_blank">{{ (b.debtor_name or '—')[:30] }}</a>
+                        {% else %}
+                            {{ (b.debtor_name or '—')[:30] }}
+                        {% endif %}
+                    </td>
+                    <td>{{ b.debtor_inn or '—' }}</td>
+                    <td>{{ b.case_number or '—' }}</td>
+                    <td>
+                        {% set phase = b.phase.value %}
+                        {% if phase == 'sale' %}
+                            <span class="badge badge-red">реализация</span>
+                        {% elif phase == 'observation' %}
+                            <span class="badge badge-yellow">наблюдение</span>
+                        {% elif phase == 'completed' %}
+                            <span class="badge badge-green">завершено</span>
+                        {% else %}
+                            <span class="badge badge-gray">{{ phase }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ (b.arbitration_manager or '—')[:25] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <p class="empty">Записей не найдено</p>
+    {% endif %}
+</div>
+
+<!-- Действия -->
+<div class="card">
+    <div class="actions">
+        <a href="/search" class="btn btn-secondary">Новый поиск</a>
+        <a href="/download/{{ report_id }}?format=json" class="btn btn-secondary btn-sm">Скачать JSON</a>
+        <a href="/download/{{ report_id }}?format=xlsx" class="btn btn-secondary btn-sm">Скачать Excel</a>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Debt Inspector{% endblock %}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #1a1a2e;
+            min-height: 100vh;
+        }
+        nav {
+            background: #1a1a2e;
+            color: #fff;
+            padding: 0 2rem;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        nav .logo {
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: .5px;
+        }
+        nav a { color: #94a3b8; text-decoration: none; font-size: .9rem; }
+        nav a:hover { color: #fff; }
+        .container {
+            max-width: 960px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+        }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.08);
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+        }
+        h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+        h2 { font-size: 1.15rem; margin-bottom: 1rem; color: #334155; }
+        label {
+            display: block;
+            font-size: .85rem;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: .35rem;
+        }
+        input, select {
+            width: 100%;
+            padding: .6rem .8rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: .95rem;
+            background: #fff;
+            transition: border-color .2s;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+        }
+        .form-group { margin-bottom: 1rem; }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        .form-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1rem;
+        }
+        .btn {
+            display: inline-block;
+            padding: .65rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: .95rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background .2s;
+        }
+        .btn-primary { background: #3b82f6; color: #fff; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-secondary { background: #e2e8f0; color: #334155; }
+        .btn-secondary:hover { background: #cbd5e1; }
+        .btn-sm { padding: .4rem 1rem; font-size: .85rem; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: .9rem;
+        }
+        th {
+            background: #f1f5f9;
+            text-align: left;
+            padding: .6rem .8rem;
+            font-weight: 600;
+            color: #475569;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        td {
+            padding: .6rem .8rem;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        tr:hover td { background: #f8fafc; }
+        .badge {
+            display: inline-block;
+            padding: .15rem .6rem;
+            border-radius: 20px;
+            font-size: .78rem;
+            font-weight: 600;
+        }
+        .badge-red { background: #fee2e2; color: #991b1b; }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-yellow { background: #fef9c3; color: #854d0e; }
+        .badge-gray { background: #f1f5f9; color: #475569; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .stat-card {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 1.2rem;
+            text-align: center;
+        }
+        .stat-card .number {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        .stat-card .label {
+            font-size: .8rem;
+            color: #64748b;
+            margin-top: .3rem;
+        }
+        .alert {
+            padding: .8rem 1.2rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: .9rem;
+        }
+        .alert-error { background: #fee2e2; color: #991b1b; }
+        .alert-warning { background: #fef9c3; color: #854d0e; }
+        .alert-success { background: #dcfce7; color: #166534; }
+        .tabs {
+            display: flex;
+            gap: .5rem;
+            margin-bottom: 1.5rem;
+        }
+        .tab {
+            padding: .5rem 1.2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: .9rem;
+            font-weight: 600;
+            background: #e2e8f0;
+            color: #475569;
+            border: none;
+        }
+        .tab.active {
+            background: #3b82f6;
+            color: #fff;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .empty { text-align: center; color: #94a3b8; padding: 2rem; }
+        .actions { display: flex; gap: .8rem; margin-top: 1.5rem; }
+        .spinner {
+            display: none;
+            width: 20px; height: 20px;
+            border: 3px solid #e2e8f0;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin .6s linear infinite;
+            margin-left: .5rem;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading .spinner { display: inline-block; }
+        .loading .btn-text { display: none; }
+        @media (max-width: 640px) {
+            .form-row, .form-row-3 { grid-template-columns: 1fr; }
+            .stats { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="logo">Debt Inspector</div>
+        {% if user %}
+            <a href="/logout">Выход ({{ user }})</a>
+        {% endif %}
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
