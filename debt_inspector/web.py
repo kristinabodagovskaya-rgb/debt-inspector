@@ -18,6 +18,15 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from debt_inspector.auth import check_credentials
 from debt_inspector.models.debtor import SearchParams, SubjectType
+from debt_inspector.models.bankruptcy_case_info import (
+    DebtorProfile,
+    PropertyItem,
+    PropertyType,
+    IncomeInfo,
+    determine_route,
+    determine_court,
+    ARBITRATION_COURTS,
+)
 from debt_inspector.inspector import inspect
 from debt_inspector.processing.reporter import export_json, export_excel
 
@@ -181,6 +190,122 @@ async def search_submit(
             "total_enforcement_debt": report.total_enforcement_debt,
             "total_court_claims": report.total_court_claims,
             "has_active_bankruptcy": report.has_active_bankruptcy,
+        },
+    )
+
+
+@app.get("/bankruptcy", response_class=HTMLResponse)
+async def bankruptcy_form(request: Request):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    regions = sorted(ARBITRATION_COURTS.keys())
+    return templates.TemplateResponse(
+        "bankruptcy_form.html",
+        {"request": request, "user": user, "regions": regions},
+    )
+
+
+@app.post("/bankruptcy", response_class=HTMLResponse)
+async def bankruptcy_submit(request: Request):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    form = await request.form()
+
+    # Собираем профиль
+    profile = DebtorProfile(
+        last_name=form.get("last_name", ""),
+        first_name=form.get("first_name", ""),
+        middle_name=form.get("middle_name", ""),
+        birth_date=form.get("birth_date", ""),
+        inn=form.get("inn", ""),
+        snils=form.get("snils", ""),
+        region=form.get("region", ""),
+        city=form.get("city", ""),
+        address=form.get("address", ""),
+        phone=form.get("phone", ""),
+        email=form.get("email", ""),
+        total_debt=float(form.get("total_debt", 0) or 0),
+        debt_details=form.get("debt_details", ""),
+        income=IncomeInfo(
+            employment_type=form.get("employment_type", ""),
+            monthly_income=float(form.get("monthly_income", 0) or 0),
+            employer=form.get("employer", ""),
+            dependents_count=int(form.get("dependents_count", 0) or 0),
+        ),
+    )
+
+    # Имущество (динамические поля)
+    for i in range(20):
+        prop_type = form.get(f"prop_type_{i}", "")
+        if not prop_type:
+            continue
+        profile.properties.append(PropertyItem(
+            property_type=PropertyType(prop_type) if prop_type in PropertyType.__members__.values() else PropertyType.OTHER,
+            description=form.get(f"prop_desc_{i}", ""),
+            estimated_value=float(form.get(f"prop_value_{i}", 0) or 0),
+            is_sole_housing=bool(form.get(f"prop_sole_{i}", "")),
+        ))
+
+    # Определяем маршрут и суд
+    profile.bankruptcy_route = determine_route(profile.total_debt)
+    profile.jurisdiction_court = determine_court(profile.region)
+
+    # Запуск автопоиска долгов
+    report = None
+    report_id = None
+    total_enforcement_debt = 0
+
+    if profile.last_name:
+        # Конвертация даты
+        formatted_date = ""
+        if profile.birth_date:
+            try:
+                parts = profile.birth_date.split("-")
+                formatted_date = f"{parts[2]}.{parts[1]}.{parts[0]}"
+            except (IndexError, ValueError):
+                formatted_date = profile.birth_date
+
+        # Определяем код региона
+        region_code = None
+        for code, name in REGIONS.items():
+            if name.lower() in profile.region.lower() or profile.region.lower() in name.lower():
+                region_code = code
+                break
+
+        params = SearchParams(
+            subject_type=SubjectType.PERSON,
+            last_name=profile.last_name or None,
+            first_name=profile.first_name or None,
+            middle_name=profile.middle_name or None,
+            birth_date=formatted_date or None,
+            inn=profile.inn or None,
+            region=region_code,
+        )
+
+        try:
+            report = await inspect(params, use_cache=True)
+            total_enforcement_debt = report.total_enforcement_debt
+
+            _cleanup_reports()
+            report_id = uuid.uuid4().hex[:12]
+            _reports[report_id] = (time.time(), report)
+        except Exception:
+            pass
+
+    return templates.TemplateResponse(
+        "bankruptcy_result.html",
+        {
+            "request": request,
+            "user": user,
+            "profile": profile,
+            "route": profile.bankruptcy_route.value,
+            "report": report,
+            "report_id": report_id,
+            "total_enforcement_debt": total_enforcement_debt,
         },
     )
 

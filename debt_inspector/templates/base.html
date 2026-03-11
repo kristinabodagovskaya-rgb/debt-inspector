@@ -196,7 +196,11 @@
     <nav>
         <div class="logo">Debt Inspector</div>
         {% if user %}
-            <a href="/logout">Выход ({{ user }})</a>
+            <div style="display: flex; gap: 1.5rem; align-items: center;">
+                <a href="/search">Поиск долгов</a>
+                <a href="/bankruptcy" style="color: #fbbf24;">Банкротство</a>
+                <a href="/logout">Выход ({{ user }})</a>
+            </div>
         {% endif %}
     </nav>
     <div class="container">

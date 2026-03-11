@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}Банкротство — Debt Inspector{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>Инспектор по банкротству физических лиц</h1>
+    <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        Заполните анкету для определения маршрута банкротства и подготовки документов
+    </p>
+
+    <form method="POST" action="/bankruptcy" id="bankruptcyForm" onsubmit="showLoading()">
+
+        <!-- Шаг 1: Личные данные -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem;">1. Личные данные</h2>
+        <div class="form-row-3">
+            <div class="form-group">
+                <label for="last_name">Фамилия *</label>
+                <input type="text" id="last_name" name="last_name" required>
+            </div>
+            <div class="form-group">
+                <label for="first_name">Имя *</label>
+                <input type="text" id="first_name" name="first_name" required>
+            </div>
+            <div class="form-group">
+                <label for="middle_name">Отчество</label>
+                <input type="text" id="middle_name" name="middle_name">
+            </div>
+        </div>
+        <div class="form-row-3">
+            <div class="form-group">
+                <label for="birth_date">Дата рождения</label>
+                <input type="date" id="birth_date" name="birth_date">
+            </div>
+            <div class="form-group">
+                <label for="inn">ИНН</label>
+                <input type="text" id="inn" name="inn" maxlength="12" placeholder="12 цифр">
+            </div>
+            <div class="form-group">
+                <label for="snils">СНИЛС</label>
+                <input type="text" id="snils" name="snils" placeholder="XXX-XXX-XXX XX">
+            </div>
+        </div>
+
+        <!-- Шаг 2: Место жительства (подсудность) -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">
+            2. Место жительства (для определения подсудности)
+        </h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="region">Регион *</label>
+                <select id="region" name="region" required>
+                    <option value="">Выберите регион</option>
+                    {% for r in regions %}
+                        <option value="{{ r }}">{{ r }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="city">Город / Населённый пункт</label>
+                <input type="text" id="city" name="city">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="address">Полный адрес регистрации *</label>
+            <input type="text" id="address" name="address" required placeholder="ул. Примерная, д. 1, кв. 1">
+        </div>
+
+        <!-- Шаг 3: Контакты -->
+        <div class="form-row" style="margin-top: 1rem;">
+            <div class="form-group">
+                <label for="phone">Телефон</label>
+                <input type="tel" id="phone" name="phone" placeholder="+7 (999) 123-45-67">
+            </div>
+            <div class="form-group">
+                <label for="email">E-mail</label>
+                <input type="email" id="email" name="email">
+            </div>
+        </div>
+
+        <!-- Шаг 4: Долги -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">
+            3. Информация о долгах
+        </h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="total_debt">Общая сумма долгов (руб.) *</label>
+                <input type="number" id="total_debt" name="total_debt" required min="0" step="0.01"
+                       placeholder="Например: 750000">
+            </div>
+            <div class="form-group">
+                <label>&nbsp;</label>
+                <div style="padding: .6rem 0; font-size: .85rem; color: #64748b;">
+                    До 500 000 руб. — возможно внесудебное банкротство через МФЦ
+                </div>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="debt_details">Описание долгов (кредиты, займы, налоги, ЖКХ и т.д.)</label>
+            <textarea id="debt_details" name="debt_details" rows="3"
+                      style="width:100%; padding:.6rem .8rem; border:1px solid #cbd5e1; border-radius:8px; font-size:.95rem; font-family:inherit; resize:vertical;"
+                      placeholder="Например: Сбербанк — кредит 300 000 руб., МФО — займ 50 000 руб., налоги — 15 000 руб."></textarea>
+        </div>
+
+        <!-- Шаг 5: Имущество -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">
+            4. Имущество
+        </h2>
+        <p style="color: #64748b; font-size: .85rem; margin-bottom: 1rem;">
+            Укажите всё имущество. Единственное жильё защищено от реализации (ст. 446 ГПК РФ).
+        </p>
+        <div id="properties">
+            <div class="property-item" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem;">
+                <div class="form-row" style="align-items: end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Тип</label>
+                        <select name="prop_type_0">
+                            <option value="">Нет имущества</option>
+                            <option value="apartment">Квартира</option>
+                            <option value="house">Дом</option>
+                            <option value="car">Автомобиль</option>
+                            <option value="land">Земельный участок</option>
+                            <option value="other">Другое</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Описание</label>
+                        <input type="text" name="prop_desc_0" placeholder="Например: 1-к квартира 40 м2">
+                    </div>
+                </div>
+                <div class="form-row" style="margin-top: .8rem; align-items: end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Примерная стоимость (руб.)</label>
+                        <input type="number" name="prop_value_0" min="0" step="0.01" placeholder="0">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="display:flex; align-items:center; gap:.5rem; cursor:pointer;">
+                            <input type="checkbox" name="prop_sole_0" value="1" style="width:auto;">
+                            Единственное жильё
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="addProperty()" style="margin-bottom: 1rem;">
+            + Добавить имущество
+        </button>
+
+        <!-- Шаг 6: Доходы -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">
+            5. Доходы и занятость
+        </h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="employment_type">Статус занятости</label>
+                <select id="employment_type" name="employment_type">
+                    <option value="employed">Работаю</option>
+                    <option value="unemployed">Не работаю</option>
+                    <option value="pensioner">Пенсионер</option>
+                    <option value="self_employed">ИП / Самозанятый</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="monthly_income">Ежемесячный доход (руб.)</label>
+                <input type="number" id="monthly_income" name="monthly_income" min="0" step="0.01" placeholder="0">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="employer">Место работы</label>
+                <input type="text" id="employer" name="employer" placeholder="Наименование работодателя">
+            </div>
+            <div class="form-group">
+                <label for="dependents_count">Количество иждивенцев</label>
+                <input type="number" id="dependents_count" name="dependents_count" min="0" value="0">
+            </div>
+        </div>
+
+        <div style="margin-top: 2rem;">
+            <button type="submit" class="btn btn-primary" id="submitBtn">
+                <span class="btn-text">Провести анализ</span>
+                <span class="spinner"></span>
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+let propCount = 1;
+function addProperty() {
+    const i = propCount++;
+    const div = document.createElement('div');
+    div.className = 'property-item';
+    div.style = 'background:#f8fafc; border-radius:10px; padding:1rem; margin-bottom:.8rem;';
+    div.innerHTML = `
+        <div class="form-row" style="align-items:end;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Тип</label>
+                <select name="prop_type_${i}">
+                    <option value="apartment">Квартира</option>
+                    <option value="house">Дом</option>
+                    <option value="car">Автомобиль</option>
+                    <option value="land">Земельный участок</option>
+                    <option value="other">Другое</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Описание</label>
+                <input type="text" name="prop_desc_${i}" placeholder="Описание">
+            </div>
+        </div>
+        <div class="form-row" style="margin-top:.8rem; align-items:end;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Примерная стоимость (руб.)</label>
+                <input type="number" name="prop_value_${i}" min="0" step="0.01" placeholder="0">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label style="display:flex; align-items:center; gap:.5rem; cursor:pointer;">
+                    <input type="checkbox" name="prop_sole_${i}" value="1" style="width:auto;">
+                    Единственное жильё
+                </label>
+            </div>
+        </div>
+    `;
+    document.getElementById('properties').appendChild(div);
+}
+function showLoading() {
+    document.getElementById('submitBtn').classList.add('loading');
+}
+</script>
+{% endblock %}
