@@ -27,7 +27,8 @@ from debt_inspector.models.bankruptcy_case_info import (
     determine_court,
     ARBITRATION_COURTS,
 )
-from debt_inspector.inspector import inspect
+from debt_inspector.inspector import inspect, inspect_fssp_with_captcha
+from debt_inspector.sources.fssp import CaptchaRequired
 from debt_inspector.processing.reporter import export_json, export_excel
 
 app = FastAPI(title="Debt Inspector")
@@ -173,9 +174,84 @@ async def search_submit(
             region=region_int,
         )
 
-    report = await inspect(params, use_cache=True)
+    result = await inspect(params, use_cache=True)
 
-    # Сохраняем для скачивания
+    # Капча ФССП — показываем пользователю
+    if isinstance(result, CaptchaRequired):
+        import json as _json
+        return templates.TemplateResponse(
+            "captcha.html",
+            {
+                "request": request,
+                "user": user,
+                "captcha_image": result.captcha_image,
+                "code_id": result.code_id,
+                "search_params_json": _json.dumps(result.query_params, ensure_ascii=False),
+                "return_to": "search",
+                "error": None,
+                "partial_report_id": _save_partial(result),
+            },
+        )
+
+    report = result
+    return _render_results(request, user, report)
+
+
+@app.post("/fssp-captcha", response_class=HTMLResponse)
+async def fssp_captcha_submit(
+    request: Request,
+    code_id: str = Form(""),
+    captcha_code: str = Form(""),
+    search_params: str = Form("{}"),
+    return_to: str = Form("search"),
+    partial_report_id: str = Form(""),
+):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    import json as _json
+    query_params = _json.loads(search_params)
+
+    # Получаем частичный отчёт
+    partial = None
+    entry = _reports.get(partial_report_id)
+    if entry:
+        _, partial = entry
+
+    result = await inspect_fssp_with_captcha(query_params, code_id, captcha_code, partial)
+
+    if isinstance(result, CaptchaRequired):
+        return templates.TemplateResponse(
+            "captcha.html",
+            {
+                "request": request,
+                "user": user,
+                "captcha_image": result.captcha_image,
+                "code_id": result.code_id,
+                "search_params_json": _json.dumps(result.query_params, ensure_ascii=False),
+                "return_to": return_to,
+                "error": "Неправильный код, попробуйте ещё раз",
+                "partial_report_id": _save_partial(result),
+            },
+        )
+
+    return _render_results(request, user, result)
+
+
+def _save_partial(captcha_exc: CaptchaRequired) -> str:
+    """Сохраняет частичный отчёт для использования после капчи."""
+    partial = getattr(captcha_exc, "partial_report", None)
+    if partial:
+        _cleanup_reports()
+        pid = uuid.uuid4().hex[:12]
+        _reports[pid] = (time.time(), partial)
+        return pid
+    return ""
+
+
+def _render_results(request, user, report):
+    """Рендерит страницу результатов."""
     _cleanup_reports()
     report_id = uuid.uuid4().hex[:12]
     _reports[report_id] = (time.time(), report)

@@ -4,12 +4,12 @@
 <div class="card">
     <h1>Инспектор по банкротству физических лиц</h1>
     <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
-        Заполните анкету для определения маршрута банкротства и подготовки документов
+        Заполните анкету — система определит маршрут банкротства, подсудность и подготовит план действий
     </p>
 
-    <form method="POST" action="/bankruptcy" id="bankruptcyForm" onsubmit="showLoading()">
+    <form method="POST" action="/bankruptcy" id="bankruptcyForm">
 
-        <!-- Шаг 1: Личные данные -->
+        <!-- 1. Личные данные -->
         <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem;">1. Личные данные</h2>
         <div class="form-row-3">
             <div class="form-group">
@@ -40,7 +40,7 @@
             </div>
         </div>
 
-        <!-- Шаг 2: Место жительства (подсудность) -->
+        <!-- 2. Место жительства -->
         <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">
             2. Место жительства (для определения подсудности)
         </h2>
@@ -63,9 +63,7 @@
             <label for="address">Полный адрес регистрации *</label>
             <input type="text" id="address" name="address" required placeholder="ул. Примерная, д. 1, кв. 1">
         </div>
-
-        <!-- Шаг 3: Контакты -->
-        <div class="form-row" style="margin-top: 1rem;">
+        <div class="form-row">
             <div class="form-group">
                 <label for="phone">Телефон</label>
                 <input type="tel" id="phone" name="phone" placeholder="+7 (999) 123-45-67">
@@ -76,31 +74,71 @@
             </div>
         </div>
 
-        <!-- Шаг 4: Долги -->
+        <!-- 3. Долги -->
         <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">
-            3. Информация о долгах
+            3. Долги и кредиторы
         </h2>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="total_debt">Общая сумма долгов (руб.) *</label>
-                <input type="number" id="total_debt" name="total_debt" required min="0" step="0.01"
-                       placeholder="Например: 750000">
-            </div>
-            <div class="form-group">
-                <label>&nbsp;</label>
-                <div style="padding: .6rem 0; font-size: .85rem; color: #64748b;">
-                    До 500 000 руб. — возможно внесудебное банкротство через МФЦ
+        <div class="alert alert-warning" style="margin-bottom: 1rem;">
+            Проверьте свои долги на
+            <a href="https://fssp.gov.ru/iss/ip" target="_blank">fssp.gov.ru</a>,
+            <a href="https://bankrot.fedresurs.ru" target="_blank">bankrot.fedresurs.ru</a> и
+            <a href="https://kad.arbitr.ru" target="_blank">kad.arbitr.ru</a>,
+            затем внесите данные ниже.
+        </div>
+
+        <div id="debts">
+            <div class="debt-item" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem;">
+                <div class="form-row-3" style="align-items: end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Кредитор (кому должны) *</label>
+                        <input type="text" name="debt_creditor_0" placeholder="Сбербанк, МФО, ФНС...">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Сумма долга (руб.) *</label>
+                        <input type="number" name="debt_amount_0" min="0" step="0.01" placeholder="100000">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Тип долга</label>
+                        <select name="debt_type_0">
+                            <option value="credit">Кредит</option>
+                            <option value="microloan">Микрозайм (МФО)</option>
+                            <option value="mortgage">Ипотека</option>
+                            <option value="tax">Налоги</option>
+                            <option value="utility">ЖКХ</option>
+                            <option value="alimony">Алименты</option>
+                            <option value="fine">Штрафы</option>
+                            <option value="other">Другое</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row" style="margin-top: .8rem; align-items: end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Номер ИП (ФССП) или дела</label>
+                        <input type="text" name="debt_case_0" placeholder="12345/21/77001-ИП">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Статус</label>
+                        <select name="debt_status_0">
+                            <option value="active">Активный долг</option>
+                            <option value="enforcement">Исполнительное производство</option>
+                            <option value="court">Судебное решение</option>
+                            <option value="overdue">Просрочка</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="form-group">
-            <label for="debt_details">Описание долгов (кредиты, займы, налоги, ЖКХ и т.д.)</label>
-            <textarea id="debt_details" name="debt_details" rows="3"
+        <button type="button" class="btn btn-secondary btn-sm" onclick="addDebt()" style="margin-bottom: .5rem;">
+            + Добавить кредитора
+        </button>
+        <div class="form-group" style="margin-top: 1rem;">
+            <label for="debt_notes">Дополнительные сведения о долгах</label>
+            <textarea id="debt_notes" name="debt_notes" rows="2"
                       style="width:100%; padding:.6rem .8rem; border:1px solid #cbd5e1; border-radius:8px; font-size:.95rem; font-family:inherit; resize:vertical;"
-                      placeholder="Например: Сбербанк — кредит 300 000 руб., МФО — займ 50 000 руб., налоги — 15 000 руб."></textarea>
+                      placeholder="Любая дополнительная информация: поручительства, залоги, рассрочки..."></textarea>
         </div>
 
-        <!-- Шаг 5: Имущество -->
+        <!-- 4. Имущество -->
         <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">
             4. Имущество
         </h2>
@@ -118,6 +156,7 @@
                             <option value="house">Дом</option>
                             <option value="car">Автомобиль</option>
                             <option value="land">Земельный участок</option>
+                            <option value="deposit">Вклад / Счёт</option>
                             <option value="other">Другое</option>
                         </select>
                     </div>
@@ -144,7 +183,7 @@
             + Добавить имущество
         </button>
 
-        <!-- Шаг 6: Доходы -->
+        <!-- 5. Доходы -->
         <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">
             5. Доходы и занятость
         </h2>
@@ -156,6 +195,7 @@
                     <option value="unemployed">Не работаю</option>
                     <option value="pensioner">Пенсионер</option>
                     <option value="self_employed">ИП / Самозанятый</option>
+                    <option value="disabled">Инвалид</option>
                 </select>
             </div>
             <div class="form-group">
@@ -174,23 +214,94 @@
             </div>
         </div>
 
+        <!-- 6. Семейное положение -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">
+            6. Семейное положение
+        </h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="marital_status">Семейное положение</label>
+                <select id="marital_status" name="marital_status">
+                    <option value="single">Не женат / не замужем</option>
+                    <option value="married">В браке</option>
+                    <option value="divorced">Разведён(а)</option>
+                    <option value="widowed">Вдовец / вдова</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="children_count">Несовершеннолетние дети</label>
+                <input type="number" id="children_count" name="children_count" min="0" value="0">
+            </div>
+        </div>
+
         <div style="margin-top: 2rem;">
-            <button type="submit" class="btn btn-primary" id="submitBtn">
-                <span class="btn-text">Провести анализ</span>
-                <span class="spinner"></span>
+            <button type="submit" class="btn btn-primary" style="font-size: 1.05rem; padding: .8rem 2.5rem;">
+                Провести анализ
             </button>
         </div>
     </form>
 </div>
 
 <script>
+let debtCount = 1;
 let propCount = 1;
+
+function addDebt() {
+    const i = debtCount++;
+    const div = document.createElement('div');
+    div.className = 'debt-item';
+    div.style = 'background:#f8fafc; border-radius:10px; padding:1rem; margin-bottom:.8rem; position:relative;';
+    div.innerHTML = `
+        <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:.5rem;right:.8rem;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.2rem;">&times;</button>
+        <div class="form-row-3" style="align-items:end;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Кредитор *</label>
+                <input type="text" name="debt_creditor_${i}" placeholder="Сбербанк, МФО, ФНС...">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Сумма (руб.) *</label>
+                <input type="number" name="debt_amount_${i}" min="0" step="0.01">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Тип</label>
+                <select name="debt_type_${i}">
+                    <option value="credit">Кредит</option>
+                    <option value="microloan">Микрозайм (МФО)</option>
+                    <option value="mortgage">Ипотека</option>
+                    <option value="tax">Налоги</option>
+                    <option value="utility">ЖКХ</option>
+                    <option value="alimony">Алименты</option>
+                    <option value="fine">Штрафы</option>
+                    <option value="other">Другое</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row" style="margin-top:.8rem; align-items:end;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Номер ИП / дела</label>
+                <input type="text" name="debt_case_${i}" placeholder="12345/21/77001-ИП">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Статус</label>
+                <select name="debt_status_${i}">
+                    <option value="active">Активный долг</option>
+                    <option value="enforcement">Исп. производство</option>
+                    <option value="court">Судебное решение</option>
+                    <option value="overdue">Просрочка</option>
+                </select>
+            </div>
+        </div>
+    `;
+    document.getElementById('debts').appendChild(div);
+}
+
 function addProperty() {
     const i = propCount++;
     const div = document.createElement('div');
     div.className = 'property-item';
-    div.style = 'background:#f8fafc; border-radius:10px; padding:1rem; margin-bottom:.8rem;';
+    div.style = 'background:#f8fafc; border-radius:10px; padding:1rem; margin-bottom:.8rem; position:relative;';
     div.innerHTML = `
+        <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:.5rem;right:.8rem;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.2rem;">&times;</button>
         <div class="form-row" style="align-items:end;">
             <div class="form-group" style="margin-bottom:0;">
                 <label>Тип</label>
@@ -199,21 +310,22 @@ function addProperty() {
                     <option value="house">Дом</option>
                     <option value="car">Автомобиль</option>
                     <option value="land">Земельный участок</option>
+                    <option value="deposit">Вклад / Счёт</option>
                     <option value="other">Другое</option>
                 </select>
             </div>
             <div class="form-group" style="margin-bottom:0;">
                 <label>Описание</label>
-                <input type="text" name="prop_desc_${i}" placeholder="Описание">
+                <input type="text" name="prop_desc_${i}">
             </div>
         </div>
         <div class="form-row" style="margin-top:.8rem; align-items:end;">
             <div class="form-group" style="margin-bottom:0;">
-                <label>Примерная стоимость (руб.)</label>
-                <input type="number" name="prop_value_${i}" min="0" step="0.01" placeholder="0">
+                <label>Стоимость (руб.)</label>
+                <input type="number" name="prop_value_${i}" min="0" step="0.01">
             </div>
             <div class="form-group" style="margin-bottom:0;">
-                <label style="display:flex; align-items:center; gap:.5rem; cursor:pointer;">
+                <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
                     <input type="checkbox" name="prop_sole_${i}" value="1" style="width:auto;">
                     Единственное жильё
                 </label>
@@ -221,9 +333,6 @@ function addProperty() {
         </div>
     `;
     document.getElementById('properties').appendChild(div);
-}
-function showLoading() {
-    document.getElementById('submitBtn').classList.add('loading');
 }
 </script>
 {% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Капча ФССП — Debt Inspector{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 500px; margin: 2rem auto; text-align: center;">
+    <h2>ФССП — введите код с картинки</h2>
+    <p style="color: #64748b; font-size: .9rem; margin-bottom: 1.5rem;">
+        Для получения данных ФССП требует ввод капчи
+    </p>
+
+    <div style="margin: 1.5rem 0; background: #f8fafc; border-radius: 10px; padding: 1.5rem;">
+        <img src="data:image/png;base64,{{ captcha_image }}" alt="Капча" style="max-width: 100%; border-radius: 6px;">
+    </div>
+
+    <form method="POST" action="/fssp-captcha">
+        <input type="hidden" name="code_id" value="{{ code_id }}">
+        <input type="hidden" name="search_params" value="{{ search_params_json }}">
+        <input type="hidden" name="return_to" value="{{ return_to }}">
+        <input type="hidden" name="partial_report_id" value="{{ partial_report_id }}">
+
+        <div class="form-group" style="max-width: 250px; margin: 0 auto 1rem;">
+            <label for="captcha_code">Введите код</label>
+            <input type="text" id="captcha_code" name="captcha_code" required autofocus
+                   style="text-align: center; font-size: 1.3rem; letter-spacing: 3px;"
+                   autocomplete="off">
+        </div>
+
+        {% if error %}
+            <div class="alert alert-error" style="margin-bottom: 1rem;">{{ error }}</div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary">Отправить</button>
+        <a href="/search" class="btn btn-secondary" style="margin-left: .5rem;">Отмена</a>
+    </form>
+</div>
+{% endblock %}

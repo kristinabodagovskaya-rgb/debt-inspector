@@ -2,7 +2,7 @@
 Парсер ФССП (Федеральная служба судебных приставов).
 
 Рабочий endpoint: https://is-go.fssp.gov.ru/ajax_search (GET, JSONP).
-Капча обязательна — решается через rucaptcha/anti-captcha.
+Капча показывается пользователю в браузере — он вводит код вручную.
 """
 
 import asyncio
@@ -14,28 +14,27 @@ from bs4 import BeautifulSoup
 from .base import BaseSource
 from debt_inspector.models.debtor import SearchParams, SubjectType
 from debt_inspector.models.enforcement import EnforcementProceeding, EnforcementStatus
-from debt_inspector.captcha import CaptchaSolver
 
 SEARCH_URL = "https://is-go.fssp.gov.ru/ajax_search"
-MAX_CAPTCHA_RETRIES = 3
+
+
+class CaptchaRequired(Exception):
+    """Исключение — нужна капча. Содержит данные для показа пользователю."""
+
+    def __init__(self, captcha_image: str, code_id: str, query_params: dict):
+        self.captcha_image = captcha_image  # base64 PNG
+        self.code_id = code_id
+        self.query_params = query_params
+        super().__init__("ФССП требует ввод капчи")
 
 
 class FSSPSource(BaseSource):
     name = "fssp"
     base_url = "https://fssp.gov.ru"
 
-    def __init__(self):
-        super().__init__()
-        self.captcha_solver = CaptchaSolver()
-
-    async def close(self):
-        await self.captcha_solver.close()
-        await super().close()
-
     async def search(self, params: SearchParams) -> list[EnforcementProceeding]:
-        """Поиск исполнительных производств."""
+        """Поиск исполнительных производств. Может выбросить CaptchaRequired."""
         try:
-            # Сначала загружаем страницу для cookies
             await self._get(f"{self.base_url}/iss/ip")
             await asyncio.sleep(0.5)
 
@@ -44,8 +43,38 @@ class FSSPSource(BaseSource):
                 return []
 
             return await self._do_search(query_params)
+        except CaptchaRequired:
+            raise  # Пробрасываем наверх для показа пользователю
         except Exception as e:
             raise RuntimeError(f"ФССП: {e}") from e
+
+    async def search_with_captcha(
+        self, query_params: dict, code_id: str, captcha_code: str
+    ) -> list[EnforcementProceeding]:
+        """Повторный запрос с решённой капчей."""
+        await self._get(f"{self.base_url}/iss/ip")
+        await asyncio.sleep(0.3)
+
+        callback_name = "jsonp_cb"
+        params = {**query_params}
+        params["code_id"] = code_id
+        params["code"] = captcha_code
+        params["callback"] = callback_name
+
+        resp = await self._get(SEARCH_URL, params=params)
+        data = self._parse_jsonp(resp.text, callback_name)
+
+        if not data:
+            return []
+
+        html = data.get("data", "")
+
+        if "captcha-popup" in html:
+            # Капча снова — неправильный код
+            img, new_code_id = self._extract_captcha(html)
+            raise CaptchaRequired(img, new_code_id, query_params)
+
+        return self._parse_results(html)
 
     def _build_params(self, params: SearchParams) -> dict | None:
         """Формирует параметры запроса."""
@@ -58,11 +87,9 @@ class FSSPSource(BaseSource):
         if params.region:
             base["is[region_id][0]"] = str(params.region)
 
-        # Поиск по ИНН (вариант 5)
         if params.inn:
             return {**base, "is[variant]": "5", "is[inn]": params.inn}
 
-        # Физлицо (вариант 1)
         if params.subject_type == SubjectType.PERSON:
             if not params.last_name:
                 return None
@@ -77,7 +104,6 @@ class FSSPSource(BaseSource):
                 result["is[date]"] = params.birth_date
             return result
 
-        # Юрлицо (вариант 2)
         if params.company_name:
             return {
                 **base,
@@ -88,7 +114,7 @@ class FSSPSource(BaseSource):
         return None
 
     async def _do_search(self, query_params: dict) -> list[EnforcementProceeding]:
-        """Выполняет запрос и обрабатывает капчу."""
+        """Выполняет запрос. При капче — выбрасывает CaptchaRequired."""
         callback_name = "jsonp_cb"
         query_params["callback"] = callback_name
 
@@ -100,72 +126,36 @@ class FSSPSource(BaseSource):
 
         html = data.get("data", "")
 
-        # Проверяем нет ли ошибки "заполните поля"
-        if not html or "Заполните" in html or len(html) < 50:
+        if not html or "Заполните" in html or "Выберите" in html or len(html) < 50:
             return []
 
-        # Капча?
         if "captcha-popup" in html:
-            html = await self._handle_captcha(html, query_params, callback_name)
+            img, code_id = self._extract_captcha(html)
+            # Убираем callback из params перед сохранением
+            saved_params = {k: v for k, v in query_params.items() if k != "callback"}
+            raise CaptchaRequired(img, code_id, saved_params)
 
         return self._parse_results(html)
 
-    async def _handle_captcha(self, html: str, query_params: dict, callback_name: str) -> str:
-        """Решает капчу и повторяет запрос."""
-        if not self.captcha_solver.is_configured:
-            raise RuntimeError(
-                "ФССП требует капчу. Установите CAPTCHA_API_KEY и CAPTCHA_PROVIDER"
-            )
+    def _extract_captcha(self, html: str) -> tuple[str, str]:
+        """Извлекает base64 картинку и code_id из HTML капчи."""
+        img_match = re.search(r'src="data:image/png;base64,([^"]+)"', html)
+        captcha_image = img_match.group(1) if img_match else ""
 
-        for attempt in range(MAX_CAPTCHA_RETRIES):
-            # Извлекаем base64 картинку
-            img_match = re.search(r'src="data:image/png;base64,([^"]+)"', html)
-            if not img_match:
-                raise RuntimeError("Не удалось найти картинку капчи")
+        code_id_match = re.search(r'code_id=([^&"]+)', html)
+        code_id = code_id_match.group(1) if code_id_match else ""
 
-            import base64
-            img_bytes = base64.b64decode(img_match.group(1))
-
-            # Извлекаем code_id
-            code_id_match = re.search(r'code_id=([^&"]+)', html)
-            code_id = code_id_match.group(1) if code_id_match else ""
-
-            # Решаем капчу
-            captcha_text = await self.captcha_solver.solve_image(img_bytes)
-            if not captcha_text:
-                continue
-
-            # Повторяем запрос с кодом капчи
-            captcha_params = {**query_params}
-            captcha_params["code_id"] = code_id
-            captcha_params["code"] = captcha_text
-            captcha_params["callback"] = callback_name
-
-            resp = await self._get(SEARCH_URL, params=captcha_params)
-            data = self._parse_jsonp(resp.text, callback_name)
-
-            if not data:
-                continue
-
-            new_html = data.get("data", "")
-            if "captcha-popup" not in new_html:
-                return new_html
-
-            html = new_html  # Попробуем снова с новой капчей
-
-        raise RuntimeError(f"Не удалось решить капчу за {MAX_CAPTCHA_RETRIES} попыток")
+        return captcha_image, code_id
 
     def _parse_jsonp(self, text: str, callback_name: str) -> dict | None:
         """Парсит JSONP ответ."""
-        # Формат: callback_name({...})
         text = text.strip()
-
-        # Убираем callback обёртку
         prefix = f"{callback_name}("
-        if text.startswith(prefix) and text.endswith(")"):
+        if text.startswith(prefix) and text.endswith(");"):
+            json_str = text[len(prefix):-2]
+        elif text.startswith(prefix) and text.endswith(")"):
             json_str = text[len(prefix):-1]
         else:
-            # Пробуем найти JSON в тексте
             match = re.search(r'\{.*\}', text, re.DOTALL)
             if match:
                 json_str = match.group(0)
@@ -182,7 +172,7 @@ class FSSPSource(BaseSource):
         soup = BeautifulSoup(html, "lxml")
         results = []
 
-        # ФССП возвращает результаты в таблице или блоках .iss-result
+        # Таблица
         table = soup.select_one("table") or soup.select_one(".results")
         if table:
             rows = table.select("tr")
@@ -193,33 +183,29 @@ class FSSPSource(BaseSource):
                     if proc:
                         results.append(proc)
 
-        # Альтернативно: блоки с классами
+        # Блоки
         if not results:
-            blocks = soup.select(".iss-result") or soup.select("[class*='result']")
-            for block in blocks:
+            for block in soup.select(".iss-result") or soup.select("[class*='result']"):
                 proc = self._parse_block(block)
                 if proc:
                     results.append(proc)
 
-        # Ещё вариант: весь HTML как текст
+        # Raw text
         if not results and len(html) > 200:
             results = self._parse_text(html)
 
         return results
 
     def _parse_row(self, cells: list) -> EnforcementProceeding | None:
-        """Парсинг строки таблицы."""
         try:
             texts = [c.get_text(strip=True) for c in cells]
             proc = EnforcementProceeding()
 
-            for i, text in enumerate(texts):
-                # Номер ИП
+            for text in texts:
                 ip_match = re.search(r"(\d+/\d+/\d+-\w+)", text)
                 if ip_match and not proc.number:
                     proc.number = ip_match.group(1)
 
-                # Сумма
                 amount_match = re.search(r"(\d[\d\s]*[.,]\d{2})", text)
                 if amount_match and not proc.amount:
                     s = amount_match.group(1).replace(" ", "").replace(",", ".")
@@ -228,7 +214,6 @@ class FSSPSource(BaseSource):
                     except ValueError:
                         pass
 
-                # Дата
                 date_match = re.search(r"(\d{2}\.\d{2}\.\d{4})", text)
                 if date_match and not proc.date_opened:
                     try:
@@ -238,43 +223,35 @@ class FSSPSource(BaseSource):
                     except (ValueError, TypeError):
                         pass
 
-            # Предмет — обычно длинная строка
             longest = max(texts, key=len) if texts else ""
             if len(longest) > 20:
                 proc.subject = longest[:200]
 
             if proc.number:
-                proc.status = EnforcementStatus.ACTIVE
-                # Проверка на окончание
                 full_text = " ".join(texts).lower()
                 if "окончено" in full_text or "исполнено" in full_text:
                     proc.status = EnforcementStatus.FINISHED
                 elif "приостановлено" in full_text:
                     proc.status = EnforcementStatus.SUSPENDED
-
+                else:
+                    proc.status = EnforcementStatus.ACTIVE
                 return proc
-
         except (IndexError, AttributeError):
             pass
         return None
 
     def _parse_block(self, block) -> EnforcementProceeding | None:
-        """Парсинг блочного элемента."""
         text = block.get_text(separator="\n", strip=True)
         if len(text) < 20:
             return None
         return self._extract_from_text(text)
 
     def _parse_text(self, html: str) -> list[EnforcementProceeding]:
-        """Парсинг из raw HTML текста."""
         soup = BeautifulSoup(html, "lxml")
         text = soup.get_text(separator="\n", strip=True)
         results = []
 
-        # Ищем все номера ИП
-        ip_numbers = re.findall(r"(\d+/\d+/\d+-\w+)", text)
-        for ip_num in ip_numbers:
-            # Берём контекст вокруг номера
+        for ip_num in re.findall(r"(\d+/\d+/\d+-\w+)", text):
             idx = text.find(ip_num)
             context = text[max(0, idx - 200):idx + 500]
             proc = self._extract_from_text(context)
@@ -285,15 +262,12 @@ class FSSPSource(BaseSource):
         return results
 
     def _extract_from_text(self, text: str) -> EnforcementProceeding | None:
-        """Извлекает данные ИП из текстового фрагмента."""
         proc = EnforcementProceeding()
 
-        # Номер
         num_match = re.search(r"(\d+/\d+/\d+-\w+)", text)
         if num_match:
             proc.number = num_match.group(1)
 
-        # Сумма
         amount_match = re.search(r"(\d[\d\s]*[.,]\d{2})\s*(?:руб|₽)?", text)
         if amount_match:
             s = amount_match.group(1).replace(" ", "").replace(",", ".")
@@ -302,7 +276,6 @@ class FSSPSource(BaseSource):
             except ValueError:
                 pass
 
-        # Дата
         date_match = re.search(r"(\d{2}\.\d{2}\.\d{4})", text)
         if date_match:
             try:
@@ -312,12 +285,10 @@ class FSSPSource(BaseSource):
             except (ValueError, TypeError):
                 pass
 
-        # Предмет
         subj_match = re.search(r"(?:Предмет|предмет)[:\s]*(.+?)(?:\n|$)", text)
         if subj_match:
             proc.subject = subj_match.group(1).strip()[:200]
 
-        # Статус
         lower = text.lower()
         if "окончено" in lower or "исполнено" in lower:
             proc.status = EnforcementStatus.FINISHED
