@@ -3,7 +3,7 @@
 
 Использует публичный поиск на fssp.gov.ru.
 ФССП отдаёт результаты через POST + AJAX с задержкой.
-Есть капча — при блокировке возвращаем ошибку, а не крашимся.
+Капча решается автоматически через rucaptcha/anti-captcha (если настроен CAPTCHA_API_KEY).
 """
 
 import asyncio
@@ -14,6 +14,11 @@ from bs4 import BeautifulSoup
 from .base import BaseSource
 from debt_inspector.models.debtor import SearchParams, SubjectType
 from debt_inspector.models.enforcement import EnforcementProceeding, EnforcementStatus
+from debt_inspector.captcha import (
+    CaptchaSolver,
+    extract_captcha_image_url,
+    extract_recaptcha_sitekey,
+)
 
 
 # Коды регионов ФССП (основные)
@@ -25,10 +30,20 @@ FSSP_REGIONS = {
     61: "Ростовская область",
 }
 
+MAX_CAPTCHA_RETRIES = 3
+
 
 class FSSPSource(BaseSource):
     name = "fssp"
     base_url = "https://fssp.gov.ru"
+
+    def __init__(self):
+        super().__init__()
+        self.captcha_solver = CaptchaSolver()
+
+    async def close(self):
+        await self.captcha_solver.close()
+        await super().close()
 
     async def search(self, params: SearchParams) -> list[EnforcementProceeding]:
         """Поиск исполнительных производств."""
@@ -75,7 +90,7 @@ class FSSPSource(BaseSource):
         return await self._do_search(form_data)
 
     async def _do_search(self, form_data: dict) -> list[EnforcementProceeding]:
-        """Отправить запрос поиска и распарсить результаты."""
+        """Отправить запрос поиска, решить капчу если нужно, распарсить результаты."""
         url = f"{self.base_url}/iss/ip"
 
         # Первый запрос — получить страницу с формой (и cookies)
@@ -90,13 +105,66 @@ class FSSPSource(BaseSource):
 
         html = resp.text
 
-        # Проверка на капчу
-        if "captcha" in html.lower() or "recaptcha" in html.lower():
-            raise RuntimeError(
-                "ФССП требует ввод капчи. Попробуйте позже или используйте VPN/прокси."
-            )
+        # Проверка на капчу и попытка решить
+        if self._has_captcha(html):
+            html = await self._solve_and_retry(html, url, form_data)
 
         return self._parse_results(html)
+
+    def _has_captcha(self, html: str) -> bool:
+        """Проверяет наличие капчи на странице."""
+        lower = html.lower()
+        return "captcha" in lower or "recaptcha" in lower or "g-recaptcha" in lower
+
+    async def _solve_and_retry(
+        self, html: str, url: str, form_data: dict
+    ) -> str:
+        """Решает капчу и повторяет запрос. Возвращает HTML с результатами."""
+        if not self.captcha_solver.is_configured:
+            raise RuntimeError(
+                "ФССП требует капчу. Установите CAPTCHA_API_KEY "
+                "(rucaptcha.com или anti-captcha.com) и CAPTCHA_PROVIDER"
+            )
+
+        for attempt in range(1, MAX_CAPTCHA_RETRIES + 1):
+            # reCAPTCHA v2
+            sitekey = extract_recaptcha_sitekey(html)
+            if sitekey:
+                token = await self.captcha_solver.solve_recaptcha_v2(sitekey, url)
+                if not token:
+                    raise RuntimeError(f"Не удалось решить reCAPTCHA (попытка {attempt})")
+
+                form_data["g-recaptcha-response"] = token
+                resp = await self._post(url, data=form_data)
+                html = resp.text
+
+                if not self._has_captcha(html):
+                    return html
+                continue
+
+            # Обычная картинка-капча
+            img_url = extract_captcha_image_url(html)
+            if img_url:
+                if img_url.startswith("/"):
+                    img_url = f"{self.base_url}{img_url}"
+
+                img_resp = await self._get(img_url)
+                captcha_text = await self.captcha_solver.solve_image(img_resp.content)
+                if not captcha_text:
+                    raise RuntimeError(f"Не удалось решить капчу-картинку (попытка {attempt})")
+
+                form_data["captcha"] = captcha_text
+                resp = await self._post(url, data=form_data)
+                html = resp.text
+
+                if not self._has_captcha(html):
+                    return html
+                continue
+
+            # Капча есть, но не можем определить тип
+            raise RuntimeError("Неизвестный тип капчи ФССП")
+
+        raise RuntimeError(f"Не удалось решить капчу за {MAX_CAPTCHA_RETRIES} попыток")
 
     def _parse_results(self, html: str) -> list[EnforcementProceeding]:
         """Парсинг таблицы результатов ФССП."""
