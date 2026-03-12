@@ -8,12 +8,12 @@
     </p>
 
     <div style="margin: 1.5rem 0; background: #f8fafc; border-radius: 10px; padding: 1.5rem;">
-        <img src="data:image/png;base64,{{ captcha_image }}" alt="Капча" style="max-width: 100%; border-radius: 6px;">
+        <img src="data:image/png;base64,{{ captcha_image|safe }}" alt="Капча" style="max-width: 100%; border-radius: 6px;">
     </div>
 
     <form method="POST" action="/fssp-captcha">
         <input type="hidden" name="code_id" value="{{ code_id }}">
-        <input type="hidden" name="search_params" value="{{ search_params_json }}">
+        <input type="hidden" name="search_params_b64" value="{{ search_params_b64 }}">
         <input type="hidden" name="return_to" value="{{ return_to }}">
         <input type="hidden" name="partial_report_id" value="{{ partial_report_id }}">
 

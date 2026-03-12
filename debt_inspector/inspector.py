@@ -10,6 +10,7 @@ from debt_inspector.models.report import DebtReport
 from debt_inspector.sources.fssp import FSSPSource, CaptchaRequired
 from debt_inspector.sources.efrsb import EFRSBSource
 from debt_inspector.sources.kad_arbitr import KadArbitrSource
+from debt_inspector.sources.fns import FNSSource
 from debt_inspector.processing.deduplicator import (
     deduplicate_enforcements,
     deduplicate_court_cases,
@@ -30,11 +31,18 @@ async def inspect(params: SearchParams, use_cache: bool = True) -> DebtReport | 
 
     captcha_exc = None
 
-    # Параллельный запуск всех источников
+    # Параллельный запуск всех источников (таймаут 30с на каждый)
+    async def _with_timeout(coro, timeout=30):
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except asyncio.TimeoutError:
+            raise RuntimeError("таймаут подключения")
+
     results = await asyncio.gather(
-        _search_source(FSSPSource(), params, "ФССП"),
-        _search_source(KadArbitrSource(), params, "КАД Арбитр"),
-        _search_source(EFRSBSource(), params, "ЕФРСБ"),
+        _with_timeout(_search_source(FSSPSource(), params, "ФССП"), timeout=45),
+        _with_timeout(_search_source(KadArbitrSource(), params, "КАД Арбитр"), timeout=20),
+        _with_timeout(_search_source(EFRSBSource(), params, "ЕФРСБ"), timeout=20),
+        _with_timeout(_search_source(FNSSource(), params, "ФНС"), timeout=20),
         return_exceptions=True,
     )
 
@@ -59,6 +67,13 @@ async def inspect(params: SearchParams, use_cache: bool = True) -> DebtReport | 
     elif isinstance(results[2], Exception):
         report.errors.append(f"ЕФРСБ: {results[2]}")
 
+    # ФНС (налоги) — результат добавляется к enforcements
+    if len(results) > 3:
+        if isinstance(results[3], list):
+            report.enforcements.extend(results[3])
+        elif isinstance(results[3], Exception):
+            report.errors.append(f"ФНС: {results[3]}")
+
     # Если ФССП требует капчу — возвращаем её вместе с частичным отчётом
     if captcha_exc is not None:
         captcha_exc.partial_report = report
@@ -71,6 +86,12 @@ async def inspect_fssp_with_captcha(
     query_params: dict, code_id: str, captcha_code: str, partial_report: DebtReport | None = None
 ) -> DebtReport | CaptchaRequired:
     """Завершает поиск ФССП с введённой капчей."""
+    import sys
+    import traceback
+    call_id = id(asyncio.current_task())
+    print(f"[INSPECTOR-{call_id}] START inspect_fssp_with_captcha", file=sys.stderr)
+    print(f"[INSPECTOR-{call_id}] caller stack:\n{''.join(traceback.format_stack()[-4:-1])}", file=sys.stderr)
+
     source = FSSPSource()
     try:
         async with source:
@@ -79,15 +100,19 @@ async def inspect_fssp_with_captcha(
         e.partial_report = partial_report
         return e
     except Exception as e:
+        print(f"[INSPECTOR-{call_id}] Exception: {e}", file=sys.stderr)
+        enforcements = []
         if partial_report:
             partial_report.errors.append(f"ФССП: {e}")
-            return _finalize_report(partial_report, True)
-        raise
+
+    print(f"[INSPECTOR-{call_id}] enforcements count: {len(enforcements)}", file=sys.stderr)
 
     if partial_report:
         partial_report.enforcements = enforcements
         partial_report.errors = [e for e in partial_report.errors if "капча" not in e.lower()]
-        return _finalize_report(partial_report, True)
+        result = _finalize_report(partial_report, True)
+        print(f"[INSPECTOR-{call_id}] RETURN with {len(result.enforcements)} enforcements", file=sys.stderr)
+        return result
 
     # Только ФССП
     report = DebtReport(

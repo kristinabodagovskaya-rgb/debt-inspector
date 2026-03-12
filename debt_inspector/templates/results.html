@@ -15,7 +15,7 @@
             <div class="label">Исп. производств</div>
         </div>
         <div class="stat-card">
-            <div class="number">{{ "%.0f"|format(total_enforcement_debt) }}</div>
+            <div class="number">{{ total_enforcement_debt|money0 }}</div>
             <div class="label">Долг по ИП (руб.)</div>
         </div>
         <div class="stat-card">
@@ -63,7 +63,7 @@
                 <tr>
                     <td>{{ e.number or '—' }}</td>
                     <td>{{ e.date_opened.strftime('%d.%m.%Y') if e.date_opened else '—' }}</td>
-                    <td style="white-space: nowrap;">{{ "%.2f"|format(e.amount) if e.amount else '—' }}</td>
+                    <td style="white-space: nowrap; font-weight: 600;">{{ e.amount|money if e.amount else '—' }}</td>
                     <td>
                         {% if e.status.value == 'active' %}
                             <span class="badge badge-red">активно</span>
@@ -75,10 +75,17 @@
                             <span class="badge badge-gray">{{ e.status.value }}</span>
                         {% endif %}
                     </td>
-                    <td>{{ (e.subject or '—')[:60] }}</td>
-                    <td>{{ e.claimant or '—' }}</td>
+                    <td>{{ (e.subject or '—')[:80] }}</td>
+                    <td style="font-size: .85rem;">{{ e.claimant or '—' }}</td>
                 </tr>
                 {% endfor %}
+                {% if report.enforcements %}
+                <tr style="background: #f8fafc; font-weight: 700; border-top: 2px solid #e2e8f0;">
+                    <td colspan="2" style="text-align: right;">ИТОГО:</td>
+                    <td style="white-space: nowrap; color: #dc2626;">{{ total_enforcement_debt|money }} руб.</td>
+                    <td colspan="3"></td>
+                </tr>
+                {% endif %}
             </tbody>
         </table>
     </div>
@@ -116,7 +123,7 @@
                     </td>
                     <td>{{ (c.court_name or '—')[:30] }}</td>
                     <td>{{ c.date_filed.strftime('%d.%m.%Y') if c.date_filed else '—' }}</td>
-                    <td style="white-space: nowrap;">{{ "%.2f"|format(c.amount) if c.amount else '—' }}</td>
+                    <td style="white-space: nowrap;">{{ c.amount|money if c.amount else '—' }}</td>
                     <td>
                         {% if c.status.value == 'active' %}
                             <span class="badge badge-red">активно</span>

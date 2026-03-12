@@ -39,6 +39,18 @@ app.add_middleware(
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
+
+def _fmt_money(value, decimals=2):
+    """Форматирует число как деньги: 1 534 500.12"""
+    if value is None:
+        return "—"
+    fmt = f"{{:,.{decimals}f}}"
+    return fmt.format(float(value)).replace(",", " ")
+
+
+templates.env.filters["money"] = _fmt_money
+templates.env.filters["money0"] = lambda v: _fmt_money(v, 0)
+
 # In-memory хранилище отчётов для скачивания (TTL 1 час)
 _reports: dict[str, tuple[float, object]] = {}
 REPORT_TTL = 3600
@@ -178,23 +190,14 @@ async def search_submit(
 
     # Капча ФССП — показываем пользователю
     if isinstance(result, CaptchaRequired):
-        import json as _json
-        return templates.TemplateResponse(
-            "captcha.html",
-            {
-                "request": request,
-                "user": user,
-                "captcha_image": result.captcha_image,
-                "code_id": result.code_id,
-                "search_params_json": _json.dumps(result.query_params, ensure_ascii=False),
-                "return_to": "search",
-                "error": None,
-                "partial_report_id": _save_partial(result),
-            },
-        )
+        return _render_captcha(request, user, result, "search", None)
 
     report = result
-    return _render_results(request, user, report)
+    return await _render_results(request, user, report)
+
+
+# Кеш результатов капчи — защита от двойной отправки
+_captcha_results: dict[str, object] = {}
 
 
 @app.post("/fssp-captcha", response_class=HTMLResponse)
@@ -202,7 +205,7 @@ async def fssp_captcha_submit(
     request: Request,
     code_id: str = Form(""),
     captcha_code: str = Form(""),
-    search_params: str = Form("{}"),
+    search_params_b64: str = Form(""),
     return_to: str = Form("search"),
     partial_report_id: str = Form(""),
 ):
@@ -210,8 +213,21 @@ async def fssp_captcha_submit(
     if not user:
         return RedirectResponse("/login", status_code=302)
 
+    # Защита от двойной отправки — если этот code_id уже обработан, берём из кеша
+    cache_key = f"{code_id}:{captcha_code}"
+    if cache_key in _captcha_results:
+        result = _captcha_results[cache_key]
+        if isinstance(result, CaptchaRequired):
+            return _render_captcha(request, user, result, return_to, "Неправильный код, попробуйте ещё раз")
+        return await _render_results(request, user, result)
+
     import json as _json
-    query_params = _json.loads(search_params)
+    import base64
+
+    try:
+        query_params = _json.loads(base64.b64decode(search_params_b64).decode())
+    except Exception:
+        query_params = {}
 
     # Получаем частичный отчёт
     partial = None
@@ -221,22 +237,42 @@ async def fssp_captcha_submit(
 
     result = await inspect_fssp_with_captcha(query_params, code_id, captcha_code, partial)
 
-    if isinstance(result, CaptchaRequired):
-        return templates.TemplateResponse(
-            "captcha.html",
-            {
-                "request": request,
-                "user": user,
-                "captcha_image": result.captcha_image,
-                "code_id": result.code_id,
-                "search_params_json": _json.dumps(result.query_params, ensure_ascii=False),
-                "return_to": return_to,
-                "error": "Неправильный код, попробуйте ещё раз",
-                "partial_report_id": _save_partial(result),
-            },
-        )
+    # Кешируем результат
+    _captcha_results[cache_key] = result
+    # Очистка старых (больше 20 записей)
+    if len(_captcha_results) > 20:
+        keys = list(_captcha_results.keys())
+        for k in keys[:10]:
+            del _captcha_results[k]
 
-    return _render_results(request, user, result)
+    if isinstance(result, CaptchaRequired):
+        return _render_captcha(request, user, result, return_to, "Неправильный код, попробуйте ещё раз")
+
+    return await _render_results(request, user, result)
+
+
+def _render_captcha(request, user, captcha_exc: CaptchaRequired, return_to: str, error: str | None):
+    """Рендерит страницу капчи."""
+    import json as _json
+    import base64
+
+    params_b64 = base64.b64encode(
+        _json.dumps(captcha_exc.query_params, ensure_ascii=False).encode()
+    ).decode()
+
+    return templates.TemplateResponse(
+        "captcha.html",
+        {
+            "request": request,
+            "user": user,
+            "captcha_image": captcha_exc.captcha_image,
+            "code_id": captcha_exc.code_id,
+            "search_params_b64": params_b64,
+            "return_to": return_to,
+            "error": error,
+            "partial_report_id": _save_partial(captcha_exc),
+        },
+    )
 
 
 def _save_partial(captcha_exc: CaptchaRequired) -> str:
@@ -250,8 +286,16 @@ def _save_partial(captcha_exc: CaptchaRequired) -> str:
     return ""
 
 
-def _render_results(request, user, report):
+async def _render_results(request, user, report):
     """Рендерит страницу результатов."""
+    # Пробиваем ИНН взыскателей через ЕГРЮЛ
+    from debt_inspector.sources.inn_lookup import lookup_inn, is_pure_inn
+    for e in report.enforcements:
+        if is_pure_inn(e.claimant):
+            name = await lookup_inn(e.claimant.strip())
+            if name:
+                e.claimant = f"{name} (ИНН {e.claimant.strip()})"
+
     _cleanup_reports()
     report_id = uuid.uuid4().hex[:12]
     _reports[report_id] = (time.time(), report)
@@ -410,9 +454,33 @@ async def download_report(request: Request, report_id: str, format: str = "json"
     return FileResponse(path, media_type=media_type, filename=path.name)
 
 
+def _start_proxy():
+    """Поднимает SSH SOCKS-туннель если задан PROXY_SSH."""
+    import subprocess
+    ssh_target = os.getenv("PROXY_SSH")  # например: root@136.243.71.213:4022
+    if not ssh_target or os.getenv("PROXY_URL"):
+        return  # Уже задан готовый прокси или SSH не нужен
+
+    try:
+        host, _, port = ssh_target.rpartition(":")
+        port = port or "22"
+        subprocess.Popen(
+            ["ssh", "-D", "1080", "-N", "-o", "StrictHostKeyChecking=no",
+             "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=10",
+             "-p", port, host],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        os.environ["PROXY_URL"] = "socks5://127.0.0.1:1080"
+        print(f"  SOCKS прокси: localhost:1080 → {host}")
+    except Exception as e:
+        print(f"  Прокси не запущен: {e}")
+
+
 def run():
     """Точка входа для debt-inspector-web."""
     import uvicorn
+
+    _start_proxy()
 
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))

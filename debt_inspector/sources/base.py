@@ -24,11 +24,12 @@ class BaseSource(abc.ABC):
 
     name: str = "base"
     base_url: str = ""
+    use_proxy: bool = True
 
     def __init__(self):
-        proxy = _get_proxy()
+        proxy = _get_proxy() if self.use_proxy else None
         self.client = httpx.AsyncClient(
-            timeout=30.0,
+            timeout=60.0,
             follow_redirects=True,
             headers={"User-Agent": ua.random},
             verify=False,
@@ -44,14 +45,14 @@ class BaseSource(abc.ABC):
     async def __aexit__(self, *args):
         await self.close()
 
-    @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=5))
+    @retry(stop=stop_after_attempt(4), wait=wait_exponential(min=2, max=15))
     async def _get(self, url: str, **kwargs) -> httpx.Response:
         self.client.headers["User-Agent"] = ua.random
         resp = await self.client.get(url, **kwargs)
         resp.raise_for_status()
         return resp
 
-    @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=5))
+    @retry(stop=stop_after_attempt(4), wait=wait_exponential(min=2, max=15))
     async def _post(self, url: str, **kwargs) -> httpx.Response:
         self.client.headers["User-Agent"] = ua.random
         resp = await self.client.post(url, **kwargs)
