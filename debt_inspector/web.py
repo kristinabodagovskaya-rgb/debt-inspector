@@ -296,9 +296,45 @@ async def _render_results(request, user, report):
             if name:
                 e.claimant = f"{name} (ИНН {e.claimant.strip()})"
 
+    # Загружаем ранее сохранённые ручные долги из БД
+    from debt_inspector.storage.cache import ResultCache
+    from debt_inspector.models.enforcement import EnforcementProceeding, EnforcementStatus
+    try:
+        cache = ResultCache()
+        key = cache.make_key(report)
+        saved_debts = cache.get_manual_debts(key)
+        cache.close()
+
+        # Добавляем только те, которых ещё нет в отчёте
+        existing = {(e.subject, e.amount) for e in report.enforcements}
+        for d in saved_debts:
+            subj = f"{d['description']} (ФНС, ручной ввод)"
+            if (subj, d["amount"]) not in existing:
+                report.enforcements.append(EnforcementProceeding(
+                    subject=subj,
+                    amount=d["amount"],
+                    status=EnforcementStatus.ACTIVE,
+                    claimant=d.get("claimant", "ФНС России"),
+                ))
+    except Exception:
+        pass
+
     _cleanup_reports()
     report_id = uuid.uuid4().hex[:12]
     _reports[report_id] = (time.time(), report)
+
+    # ФССП долг (без ФНС)
+    fssp_debt = sum(e.amount or 0 for e in report.enforcements if not (e.subject and "ФНС" in e.subject))
+    # ФНС долг
+    fns_debt = sum(e.amount or 0 for e in report.enforcements if e.subject and "ФНС" in e.subject)
+    # Общий долг
+    total_all = fssp_debt + fns_debt
+
+    # Определяем суд по региону
+    region_name = ""
+    if report.search_params.region:
+        region_name = REGIONS.get(report.search_params.region, "")
+    court_name = determine_court(region_name) if region_name else "Арбитражный суд по месту жительства"
 
     return templates.TemplateResponse(
         "results.html",
@@ -307,9 +343,11 @@ async def _render_results(request, user, report):
             "user": user,
             "report": report,
             "report_id": report_id,
-            "total_enforcement_debt": report.total_enforcement_debt,
+            "total_enforcement_debt": fssp_debt,
             "total_court_claims": report.total_court_claims,
             "has_active_bankruptcy": report.has_active_bankruptcy,
+            "total_all_debt": total_all,
+            "court_name": court_name,
         },
     )
 
@@ -428,6 +466,52 @@ async def bankruptcy_submit(request: Request):
             "total_enforcement_debt": total_enforcement_debt,
         },
     )
+
+
+@app.post("/add-debt/{report_id}")
+async def add_manual_debt(
+    request: Request,
+    report_id: str,
+    description: str = Form(""),
+    amount: float = Form(0),
+):
+    """Ручное добавление долга (ФНС и др.)."""
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    entry = _reports.get(report_id)
+    if not entry:
+        return HTMLResponse("<h3>Отчёт не найден или истёк</h3>", status_code=404)
+
+    if not description or amount <= 0:
+        # Возвращаем ту же страницу результатов
+        _, report = entry
+        return await _render_results(request, user, report)
+
+    _, report = entry
+    from debt_inspector.models.enforcement import EnforcementProceeding, EnforcementStatus
+    report.enforcements.append(EnforcementProceeding(
+        subject=f"{description} (ФНС, ручной ввод)",
+        amount=amount,
+        status=EnforcementStatus.ACTIVE,
+        claimant="ФНС России",
+    ))
+
+    # Сохраняем в БД
+    try:
+        from debt_inspector.storage.cache import ResultCache
+        cache = ResultCache()
+        key = cache.make_key(report)
+        cache.save_manual_debt(key, description, amount)
+        cache.close()
+    except Exception:
+        pass
+
+    # Обновляем отчёт в хранилище (тот же report_id)
+    _reports[report_id] = (time.time(), report)
+
+    return await _render_results(request, user, report)
 
 
 @app.get("/download/{report_id}")

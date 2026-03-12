@@ -45,14 +45,14 @@ class BaseSource(abc.ABC):
     async def __aexit__(self, *args):
         await self.close()
 
-    @retry(stop=stop_after_attempt(4), wait=wait_exponential(min=2, max=15))
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8))
     async def _get(self, url: str, **kwargs) -> httpx.Response:
         self.client.headers["User-Agent"] = ua.random
         resp = await self.client.get(url, **kwargs)
         resp.raise_for_status()
         return resp
 
-    @retry(stop=stop_after_attempt(4), wait=wait_exponential(min=2, max=15))
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8))
     async def _post(self, url: str, **kwargs) -> httpx.Response:
         self.client.headers["User-Agent"] = ua.random
         resp = await self.client.post(url, **kwargs)

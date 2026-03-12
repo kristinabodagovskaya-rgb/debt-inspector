@@ -35,6 +35,19 @@ class ResultCache:
         self.conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_query_key ON search_results(query_key)
         """)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS manual_debts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                query_key TEXT NOT NULL,
+                description TEXT NOT NULL,
+                amount REAL NOT NULL,
+                claimant TEXT DEFAULT 'ФНС России',
+                created_at TEXT NOT NULL
+            )
+        """)
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_manual_debts_key ON manual_debts(query_key)
+        """)
         self.conn.commit()
 
     def save(self, report: DebtReport):
@@ -92,11 +105,41 @@ class ResultCache:
             for r in rows
         ]
 
-    def _make_key(self, report: DebtReport) -> str:
-        p = report.search_params
+    def save_manual_debt(self, query_key: str, description: str, amount: float, claimant: str = "ФНС России"):
+        """Сохраняет ручной долг в БД."""
+        self.conn.execute(
+            """INSERT INTO manual_debts (query_key, description, amount, claimant, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (query_key, description, amount, claimant, datetime.now().isoformat()),
+        )
+        self.conn.commit()
+
+    def get_manual_debts(self, query_key: str) -> list[dict]:
+        """Получает все ручные долги для данного ключа."""
+        rows = self.conn.execute(
+            """SELECT description, amount, claimant FROM manual_debts
+               WHERE query_key = ? ORDER BY id""",
+            (query_key,),
+        ).fetchall()
+        return [{"description": r[0], "amount": r[1], "claimant": r[2]} for r in rows]
+
+    def delete_manual_debt(self, debt_id: int):
+        """Удаляет ручной долг."""
+        self.conn.execute("DELETE FROM manual_debts WHERE id = ?", (debt_id,))
+        self.conn.commit()
+
+    def make_key(self, params) -> str:
+        """Создаёт ключ из SearchParams или DebtReport."""
+        if hasattr(params, "search_params"):
+            p = params.search_params
+        else:
+            p = params
         if p.inn:
             return f"inn:{p.inn}"
         return f"name:{p.display_name}".lower().strip()
+
+    def _make_key(self, report: DebtReport) -> str:
+        return self.make_key(report)
 
     def close(self):
         self.conn.close()

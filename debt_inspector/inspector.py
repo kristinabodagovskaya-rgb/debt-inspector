@@ -11,6 +11,7 @@ from debt_inspector.sources.fssp import FSSPSource, CaptchaRequired
 from debt_inspector.sources.efrsb import EFRSBSource
 from debt_inspector.sources.kad_arbitr import KadArbitrSource
 from debt_inspector.sources.fns import FNSSource
+from debt_inspector.sources.sudact import SudactSource
 from debt_inspector.processing.deduplicator import (
     deduplicate_enforcements,
     deduplicate_court_cases,
@@ -39,10 +40,11 @@ async def inspect(params: SearchParams, use_cache: bool = True) -> DebtReport | 
             raise RuntimeError("таймаут подключения")
 
     results = await asyncio.gather(
-        _with_timeout(_search_source(FSSPSource(), params, "ФССП"), timeout=45),
-        _with_timeout(_search_source(KadArbitrSource(), params, "КАД Арбитр"), timeout=20),
-        _with_timeout(_search_source(EFRSBSource(), params, "ЕФРСБ"), timeout=20),
-        _with_timeout(_search_source(FNSSource(), params, "ФНС"), timeout=20),
+        _with_timeout(_search_source(FSSPSource(), params, "ФССП"), timeout=50),
+        _with_timeout(_search_source(KadArbitrSource(), params, "КАД Арбитр"), timeout=40),
+        _with_timeout(_search_source(EFRSBSource(), params, "ЕФРСБ"), timeout=40),
+        _with_timeout(_search_source(FNSSource(), params, "ФНС"), timeout=30),
+        _with_timeout(_search_source(SudactSource(), params, "СудАкт"), timeout=40),
         return_exceptions=True,
     )
 
@@ -73,6 +75,13 @@ async def inspect(params: SearchParams, use_cache: bool = True) -> DebtReport | 
             report.enforcements.extend(results[3])
         elif isinstance(results[3], Exception):
             report.errors.append(f"ФНС: {results[3]}")
+
+    # СудАкт (суды общей юрисдикции) — добавляется к court_cases
+    if len(results) > 4:
+        if isinstance(results[4], list):
+            report.court_cases.extend(results[4])
+        elif isinstance(results[4], Exception):
+            report.errors.append(f"СудАкт: {results[4]}")
 
     # Если ФССП требует капчу — возвращаем её вместе с частичным отчётом
     if captcha_exc is not None:
@@ -108,7 +117,9 @@ async def inspect_fssp_with_captcha(
     print(f"[INSPECTOR-{call_id}] enforcements count: {len(enforcements)}", file=sys.stderr)
 
     if partial_report:
-        partial_report.enforcements = enforcements
+        # Сохраняем не-ФССП enforcements (например ФНС) и добавляем ФССП результаты
+        non_fssp = [e for e in partial_report.enforcements if e.subject and "ФНС" in e.subject]
+        partial_report.enforcements = enforcements + non_fssp
         partial_report.errors = [e for e in partial_report.errors if "капча" not in e.lower()]
         result = _finalize_report(partial_report, True)
         print(f"[INSPECTOR-{call_id}] RETURN with {len(result.enforcements)} enforcements", file=sys.stderr)

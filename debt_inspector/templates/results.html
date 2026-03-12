@@ -11,12 +11,8 @@
     <!-- Сводка -->
     <div class="stats">
         <div class="stat-card">
-            <div class="number">{{ report.enforcements|length }}</div>
-            <div class="label">Исп. производств</div>
-        </div>
-        <div class="stat-card">
             <div class="number">{{ total_enforcement_debt|money0 }}</div>
-            <div class="label">Долг по ИП (руб.)</div>
+            <div class="label">Долг ФССП (руб.)</div>
         </div>
         <div class="stat-card">
             <div class="number">{{ report.court_cases|length }}</div>
@@ -29,6 +25,10 @@
                 <div class="number" style="color: #16a34a;">НЕТ</div>
             {% endif %}
             <div class="label">Банкротство</div>
+        </div>
+        <div class="stat-card">
+            <div class="number" style="color: #dc2626;">{{ total_all_debt|money0 }}</div>
+            <div class="label">ОБЩИЙ ДОЛГ (руб.)</div>
         </div>
     </div>
 </div>
@@ -43,9 +43,16 @@
 {% endif %}
 
 <!-- Исполнительные производства -->
+{% set fssp_items = [] %}
+{% set fssp_total = namespace(val=0) %}
+{% for e in report.enforcements if not (e.subject and 'ФНС' in e.subject) %}
+    {% if fssp_items.append(e) %}{% endif %}
+    {% set fssp_total.val = fssp_total.val + (e.amount or 0) %}
+{% endfor %}
+
 <div class="card">
     <h2>Исполнительные производства (ФССП)</h2>
-    {% if report.enforcements %}
+    {% if fssp_items %}
     <div style="overflow-x: auto;">
         <table>
             <thead>
@@ -59,7 +66,7 @@
                 </tr>
             </thead>
             <tbody>
-                {% for e in report.enforcements %}
+                {% for e in fssp_items %}
                 <tr>
                     <td>{{ e.number or '—' }}</td>
                     <td>{{ e.date_opened.strftime('%d.%m.%Y') if e.date_opened else '—' }}</td>
@@ -79,13 +86,11 @@
                     <td style="font-size: .85rem;">{{ e.claimant or '—' }}</td>
                 </tr>
                 {% endfor %}
-                {% if report.enforcements %}
                 <tr style="background: #f8fafc; font-weight: 700; border-top: 2px solid #e2e8f0;">
-                    <td colspan="2" style="text-align: right;">ИТОГО:</td>
-                    <td style="white-space: nowrap; color: #dc2626;">{{ total_enforcement_debt|money }} руб.</td>
+                    <td colspan="2" style="text-align: right;">ИТОГО ФССП:</td>
+                    <td style="white-space: nowrap; color: #dc2626;">{{ fssp_total.val|money }} руб.</td>
                     <td colspan="3"></td>
                 </tr>
-                {% endif %}
             </tbody>
         </table>
     </div>
@@ -96,19 +101,19 @@
 
 <!-- Судебные дела -->
 <div class="card">
-    <h2>Судебные дела (КАД Арбитр)</h2>
+    <h2>Судебные дела (КАД Арбитр + СудАкт)</h2>
     {% if report.court_cases %}
     <div style="overflow-x: auto;">
         <table>
             <thead>
                 <tr>
                     <th>Дело</th>
+                    <th>Тип</th>
                     <th>Суд</th>
                     <th>Дата</th>
                     <th>Сумма</th>
                     <th>Статус</th>
-                    <th>Истец</th>
-                    <th>Ответчик</th>
+                    <th>Категория / Стороны</th>
                 </tr>
             </thead>
             <tbody>
@@ -121,7 +126,16 @@
                             {{ c.case_number or '—' }}
                         {% endif %}
                     </td>
-                    <td>{{ (c.court_name or '—')[:30] }}</td>
+                    <td style="font-size: .8rem;">
+                        {% if c.court_type.value == 'arbitration' %}
+                            <span class="badge badge-blue">арбитраж</span>
+                        {% elif c.court_type.value == 'magistrate' %}
+                            <span class="badge badge-gray">мировой</span>
+                        {% else %}
+                            <span class="badge badge-yellow">общей юр.</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-size: .85rem;">{{ (c.court_name or '—')[:40] }}</td>
                     <td>{{ c.date_filed.strftime('%d.%m.%Y') if c.date_filed else '—' }}</td>
                     <td style="white-space: nowrap;">{{ c.amount|money if c.amount else '—' }}</td>
                     <td>
@@ -129,12 +143,21 @@
                             <span class="badge badge-red">активно</span>
                         {% elif c.status.value == 'decided' %}
                             <span class="badge badge-green">решено</span>
+                        {% elif c.status.value == 'appealed' %}
+                            <span class="badge badge-yellow">апелляция</span>
                         {% else %}
                             <span class="badge badge-gray">{{ c.status.value }}</span>
                         {% endif %}
                     </td>
-                    <td>{{ (c.plaintiff or '—')[:25] }}</td>
-                    <td>{{ (c.defendant or '—')[:25] }}</td>
+                    <td style="font-size: .85rem;">
+                        {% if c.subject %}
+                            {{ c.subject[:60] }}
+                        {% elif c.plaintiff or c.defendant %}
+                            {{ (c.plaintiff or '—')[:25] }} → {{ (c.defendant or '—')[:25] }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -143,6 +166,83 @@
     {% else %}
         <p class="empty">Записей не найдено</p>
     {% endif %}
+</div>
+
+<!-- Налоговая задолженность -->
+<div class="card">
+    <h2>Налоговая задолженность (ФНС)</h2>
+
+    {% if report.search_params.inn %}
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: .8rem 1rem; margin-bottom: 1rem;">
+        <span style="font-size: .85rem; color: #1e40af;">ИНН должника:</span>
+        <span style="font-size: 1.1rem; font-weight: 700; color: #1e3a8a; letter-spacing: .5px; user-select: all;">
+            {{ report.search_params.inn }}
+        </span>
+        <button onclick="navigator.clipboard.writeText('{{ report.search_params.inn }}')" title="Копировать"
+                style="background: none; border: none; cursor: pointer; font-size: .85rem; color: #2563eb; margin-left: .3rem;">
+            [копировать]
+        </button>
+    </div>
+    {% endif %}
+
+    <div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: .8rem 1rem; margin-bottom: 1rem; font-size: .85rem; color: #713f12; line-height: 1.6;">
+        <b>Как проверить налоговые долги:</b><br>
+        1. Зайдите в браузере на <b>lkfl2.nalog.ru</b> (Личный кабинет ФНС)
+           или через <b>Госуслуги</b> &rarr; раздел "Налоговая задолженность"<br>
+        2. Авторизуйтесь (по ИНН + пароль ФНС, или через Госуслуги)<br>
+        3. Перейдите в <b>"Мои налоги"</b> &rarr; <b>"Задолженность"</b><br>
+        4. Запишите суммы и добавьте ниже
+    </div>
+
+    {% set fns_debts = [] %}
+    {% for e in report.enforcements if e.subject and 'ФНС' in e.subject %}
+        {% if fns_debts.append(e) %}{% endif %}
+    {% endfor %}
+
+    {% if fns_debts %}
+    <table style="margin-bottom: 1rem;">
+        <thead>
+            <tr>
+                <th>Описание</th>
+                <th>Сумма</th>
+                <th>Взыскатель</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in fns_debts %}
+            <tr>
+                <td>{{ e.subject }}</td>
+                <td style="white-space: nowrap; font-weight: 600;">{{ e.amount|money if e.amount else '—' }} руб.</td>
+                <td>{{ e.claimant or 'ФНС России' }}</td>
+            </tr>
+            {% endfor %}
+            <tr style="background: #f8fafc; font-weight: 700; border-top: 2px solid #e2e8f0;">
+                <td style="text-align: right;">ИТОГО ФНС:</td>
+                <td style="white-space: nowrap; color: #dc2626;">
+                    {% set fns_total = namespace(val=0) %}
+                    {% for e in fns_debts %}
+                        {% set fns_total.val = fns_total.val + (e.amount or 0) %}
+                    {% endfor %}
+                    {{ fns_total.val|money }} руб.
+                </td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #94a3b8; font-size: .9rem; margin-bottom: 1rem;">Налоговых долгов пока не добавлено</p>
+    {% endif %}
+
+    <form method="POST" action="/add-debt/{{ report_id }}" id="fns-form"
+          style="display: flex; gap: .5rem; align-items: center; margin-top: .5rem; padding-top: .5rem; border-top: 1px solid #e2e8f0;">
+        <input type="text" name="description" placeholder="Тип долга (налог на имущество, НДФЛ, транспортный...)"
+               style="flex: 2; padding: .5rem .7rem; border: 1px solid #cbd5e1; border-radius: 6px;" required>
+        <input type="number" name="amount" step="0.01" min="0.01" placeholder="Сумма, руб."
+               style="flex: 1; padding: .5rem .7rem; border: 1px solid #cbd5e1; border-radius: 6px;" required>
+        <button type="submit" class="btn btn-primary" style="padding: .5rem 1.2rem; white-space: nowrap;">
+            Добавить долг
+        </button>
+    </form>
 </div>
 
 <!-- Банкротства -->
@@ -194,6 +294,91 @@
         <p class="empty">Записей не найдено</p>
     {% endif %}
 </div>
+
+<!-- Что дальше: рекомендация по банкротству -->
+{% if total_all_debt > 0 %}
+<div class="card" style="border-left: 4px solid {% if total_all_debt >= 500000 %}#dc2626{% elif total_all_debt >= 25000 %}#f59e0b{% else %}#16a34a{% endif %};">
+    <h2>Что дальше?</h2>
+
+    <div style="background: #f8fafc; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+        <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: .5rem;">
+            Общая сумма долгов: <span style="color: #dc2626;">{{ total_all_debt|money }} руб.</span>
+        </div>
+
+        {% if total_all_debt >= 500000 %}
+        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+            <div style="font-size: 1rem; font-weight: 700; color: #991b1b; margin-bottom: .5rem;">
+                Рекомендация: Судебное банкротство
+            </div>
+            <p style="color: #7f1d1d; font-size: .9rem; line-height: 1.6; margin: 0;">
+                Сумма долга превышает 500 000 руб. — подходит процедура судебного банкротства
+                через Арбитражный суд (ст. 213.3 ФЗ-127).
+            </p>
+        </div>
+
+        <div style="font-size: .9rem; line-height: 1.8; color: #334155;">
+            <b>Порядок действий:</b><br>
+            1. Соберите документы: паспорт, ИНН, СНИЛС, справки о доходах за 3 года<br>
+            2. Получите выписки: из ЕГРН (недвижимость), ГИБДД (авто), банков (счета)<br>
+            3. Составьте список кредиторов с суммами и реквизитами<br>
+            4. Оплатите госпошлину — <b>300 руб.</b> и депозит на арб. управляющего — <b>25 000 руб.</b><br>
+            5. Подайте заявление в <b>{{ court_name }}</b><br>
+            6. Суд назначит финансового управляющего и введёт процедуру реструктуризации или реализации
+        </div>
+
+        <div style="background: #eff6ff; border-radius: 6px; padding: .8rem; margin-top: 1rem; font-size: .85rem; color: #1e40af;">
+            <b>Срок процедуры:</b> 6–12 месяцев.
+            <b>Результат:</b> списание долгов, за исключением алиментов, возмещения вреда здоровью и субсидиарной ответственности.
+        </div>
+
+        {% elif total_all_debt >= 25000 %}
+        <div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+            <div style="font-size: 1rem; font-weight: 700; color: #854d0e; margin-bottom: .5rem;">
+                Рекомендация: Внесудебное банкротство через МФЦ
+            </div>
+            <p style="color: #713f12; font-size: .9rem; line-height: 1.6; margin: 0;">
+                Сумма долга от 25 000 до 500 000 руб. — можно подать на банкротство
+                бесплатно через МФЦ (ст. 223.2 ФЗ-127).
+            </p>
+        </div>
+
+        <div style="font-size: .9rem; line-height: 1.8; color: #334155;">
+            <b>Условия внесудебного банкротства:</b><br>
+            &bull; Долг от 25 000 до 1 000 000 руб.<br>
+            &bull; Исполнительное производство окончено по ст. 46 ч.1 п.4 (нет имущества)<br>
+            &bull; Или: вы пенсионер / получаете пособия, и у приставов нет взысканий более 1 года<br><br>
+            <b>Порядок действий:</b><br>
+            1. Проверьте, что ИП окончены по ст. 46 (см. таблицу ФССП выше)<br>
+            2. Составьте список кредиторов<br>
+            3. Обратитесь в <b>МФЦ по месту жительства</b> с паспортом<br>
+            4. Заполните заявление (бесплатно)<br>
+            5. Через 6 месяцев долги будут списаны
+        </div>
+
+        <div style="background: #f0fdf4; border-radius: 6px; padding: .8rem; margin-top: 1rem; font-size: .85rem; color: #166534;">
+            <b>Срок:</b> 6 месяцев. <b>Стоимость:</b> бесплатно. <b>Госпошлина:</b> нет.
+        </div>
+
+        {% else %}
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 1rem;">
+            <div style="font-size: 1rem; font-weight: 700; color: #166534; margin-bottom: .5rem;">
+                Банкротство пока не требуется
+            </div>
+            <p style="color: #14532d; font-size: .9rem; line-height: 1.6; margin: 0;">
+                Сумма долга менее 25 000 руб. Рекомендуется погасить задолженность самостоятельно
+                или обратиться к приставам для рассрочки.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if total_all_debt >= 25000 %}
+    <a href="/bankruptcy" class="btn btn-primary" style="width: 100%; text-align: center; padding: .7rem;">
+        Заполнить анкету на банкротство
+    </a>
+    {% endif %}
+</div>
+{% endif %}
 
 <!-- Действия -->
 <div class="card">
