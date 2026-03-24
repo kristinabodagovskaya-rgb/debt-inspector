@@ -281,7 +281,68 @@ function addRow(type) {
     const container = document.getElementById(type + '-debts');
     const i = rowCounters[type]++;
     container.insertAdjacentHTML('beforeend', templates[type](i));
+    bindAutoSave();
 }
+
+// === Автосохранение в localStorage ===
+const SAVE_KEY = 'debt_inspector_collect';
+
+function saveAll() {
+    const data = {};
+    document.querySelectorAll('[form="collect-form"], #collect-form input, #collect-form select').forEach(el => {
+        if (el.name) data[el.name] = el.value;
+    });
+    data._rowCounters = JSON.stringify(rowCounters);
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    // Показать индикатор
+    const ind = document.getElementById('save-indicator');
+    if (ind) { ind.style.opacity = '1'; setTimeout(() => ind.style.opacity = '0', 1500); }
+}
+
+function loadSaved() {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return;
+    try {
+        const data = JSON.parse(raw);
+        // Восстанавливаем счётчики строк и добавляем недостающие
+        if (data._rowCounters) {
+            const saved = JSON.parse(data._rowCounters);
+            for (const type of ['fssp', 'fns', 'kad', 'other']) {
+                while (rowCounters[type] < (saved[type] || 0)) {
+                    addRow(type);
+                }
+            }
+        }
+        // Заполняем значения
+        for (const [name, value] of Object.entries(data)) {
+            if (name.startsWith('_')) continue;
+            const el = document.querySelector(`[name="${name}"]`);
+            if (el) el.value = value;
+        }
+    } catch(e) {}
+}
+
+function clearSaved() {
+    localStorage.removeItem(SAVE_KEY);
+}
+
+function bindAutoSave() {
+    document.querySelectorAll('[form="collect-form"], #collect-form input, #collect-form select').forEach(el => {
+        el.removeEventListener('input', saveAll);
+        el.removeEventListener('change', saveAll);
+        el.addEventListener('input', saveAll);
+        el.addEventListener('change', saveAll);
+    });
+}
+
+// При загрузке — восстановить данные
+document.addEventListener('DOMContentLoaded', () => {
+    loadSaved();
+    bindAutoSave();
+});
+
+// При отправке формы — очистить сохранение
+document.getElementById('collect-form')?.addEventListener('submit', clearSaved);
 </script>
 
 {% endblock %}
