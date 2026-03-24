@@ -1079,6 +1079,128 @@ async def pipeline_filing_submit(request: Request, pid: str):
     return RedirectResponse(f"/pipeline/{pid}/filing", status_code=302)
 
 
+# --- Сбор долгов вручную ---
+
+
+@app.get("/collect", response_class=HTMLResponse)
+async def collect_page(request: Request):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    return templates.TemplateResponse("collect.html", {
+        "request": request, "user": user,
+        "last_name": "", "first_name": "", "middle_name": "", "inn": "", "region": "",
+        "fssp_count": 3, "fns_count": 2, "kad_count": 2, "other_count": 2,
+        "debts": {"fssp": [], "fns": [], "kad": [], "other": []},
+    })
+
+
+@app.post("/collect", response_class=HTMLResponse)
+async def collect_submit(request: Request):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    form = await request.form()
+
+    # Собираем все долги в кредиторов для pipeline
+    creditors = []
+
+    # ФССП
+    for i in range(50):
+        creditor = form.get(f"fssp_creditor_{i}", "").strip()
+        amount = float(form.get(f"fssp_amount_{i}", 0) or 0)
+        if not creditor or amount <= 0:
+            continue
+        creditors.append(CreditorInfo(
+            name=creditor,
+            amount=amount,
+            debt_type="credit",
+            contract_number=form.get(f"fssp_number_{i}", ""),
+            source="fssp_manual",
+        ))
+
+    # ФНС
+    for i in range(50):
+        amount = float(form.get(f"fns_amount_{i}", 0) or 0)
+        if amount <= 0:
+            continue
+        fns_type = form.get(f"fns_type_{i}", "other")
+        type_labels = {"ndfl": "НДФЛ", "property": "Имущественный налог", "transport": "Транспортный налог",
+                       "land": "Земельный налог", "penalty": "Пени/штрафы", "other": "Налог"}
+        creditors.append(CreditorInfo(
+            name=f"ФНС России ({type_labels.get(fns_type, fns_type)})",
+            amount=amount,
+            debt_type="tax",
+            contract_number=form.get(f"fns_year_{i}", ""),
+            source="fns_manual",
+        ))
+
+    # КАД Арбитр
+    for i in range(50):
+        plaintiff = form.get(f"kad_plaintiff_{i}", "").strip()
+        amount = float(form.get(f"kad_amount_{i}", 0) or 0)
+        number = form.get(f"kad_number_{i}", "").strip()
+        if not (plaintiff or number):
+            continue
+        creditors.append(CreditorInfo(
+            name=plaintiff or f"Истец по делу {number}",
+            amount=amount,
+            debt_type="court",
+            contract_number=number,
+            source="kad_manual",
+        ))
+
+    # Другие
+    for i in range(50):
+        creditor = form.get(f"other_creditor_{i}", "").strip()
+        amount = float(form.get(f"other_amount_{i}", 0) or 0)
+        if not creditor or amount <= 0:
+            continue
+        creditors.append(CreditorInfo(
+            name=creditor,
+            amount=amount,
+            debt_type=form.get(f"other_type_{i}", "credit"),
+            contract_number=form.get(f"other_contract_{i}", ""),
+            source="manual",
+        ))
+
+    if not creditors:
+        return templates.TemplateResponse("collect.html", {
+            "request": request, "user": user,
+            "last_name": form.get("last_name", ""), "first_name": form.get("first_name", ""),
+            "middle_name": form.get("middle_name", ""), "inn": form.get("inn", ""),
+            "region": form.get("region", ""),
+            "fssp_count": 3, "fns_count": 2, "kad_count": 2, "other_count": 2,
+            "debts": {"fssp": [], "fns": [], "kad": [], "other": []},
+        })
+
+    # Создаём pipeline из собранных данных
+    total_debt = sum(c.amount for c in creditors)
+    route = determine_route(total_debt)
+
+    region = form.get("region", "")
+    court_name = determine_court(region) if region else "Арбитражный суд по месту жительства"
+
+    pid = uuid.uuid4().hex[:12]
+    pipeline = BankruptcyPipeline(
+        current_step=PipelineStep.ASSESSMENT,
+        last_name=form.get("last_name", ""),
+        first_name=form.get("first_name", ""),
+        middle_name=form.get("middle_name", ""),
+        inn=form.get("inn", ""),
+        region=region,
+        total_debt=total_debt,
+        creditors=creditors,
+        route=route.value,
+        court_name=court_name,
+    )
+
+    _save_pipeline_data(pid, pipeline)
+    return RedirectResponse(f"/pipeline/{pid}/assessment", status_code=302)
+
+
 # --- AI-чат помощник ---
 
 

@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block title %}Сбор долгов — Debt Inspector{% endblock %}
+{% block content %}
+
+<div class="card">
+    <h1>Соберите свои долги</h1>
+    <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        Откройте каждый сайт в новой вкладке, найдите свои данные и введите их ниже.
+        Инспектор подготовит заявление на основе этих данных.
+    </p>
+</div>
+
+<!-- ШАГ 1: ФССП -->
+<div class="card" id="fssp">
+    <div style="display: flex; align-items: center; gap: .8rem; margin-bottom: 1rem;">
+        <div style="width: 36px; height: 36px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">1</div>
+        <h2 style="margin: 0;">ФССП — Исполнительные производства</h2>
+    </div>
+
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 1.2rem; margin-bottom: 1.2rem;">
+        <div style="font-weight: 700; color: #1e40af; margin-bottom: .8rem;">Инструкция:</div>
+        <ol style="font-size: .9rem; color: #1e3a5f; line-height: 2; padding-left: 1.5rem; margin: 0;">
+            <li>Откройте <a href="https://fssp.gov.ru/iss/ip" target="_blank" style="font-weight: 700;">fssp.gov.ru/iss/ip</a></li>
+            <li>Выберите "Поиск физических лиц"</li>
+            <li>Введите <b>регион</b>, <b>фамилию</b>, <b>имя</b>, <b>отчество</b>, <b>дату рождения</b></li>
+            <li>Нажмите "Найти", введите капчу</li>
+            <li>Для каждого исполнительного производства ниже введите: <b>кредитор</b>, <b>сумма</b>, <b>номер ИП</b></li>
+        </ol>
+    </div>
+
+    <div id="fssp-debts">
+        {% for i in range(fssp_count) %}
+        <div class="debt-row" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem;">
+            <div style="display: flex; gap: .8rem; flex-wrap: wrap; align-items: end;">
+                <div style="flex: 2; min-width: 200px;">
+                    <label style="font-size: .8rem; color: #64748b;">Кредитор (взыскатель)</label>
+                    <input type="text" form="collect-form" name="fssp_creditor_{{ i }}" value="{{ debts.fssp[i].creditor if debts.fssp[i] is defined else '' }}" placeholder="Сбербанк / ФНС / МФО...">
+                </div>
+                <div style="flex: 1; min-width: 120px;">
+                    <label style="font-size: .8rem; color: #64748b;">Сумма долга, руб.</label>
+                    <input type="number" form="collect-form" name="fssp_amount_{{ i }}" value="{{ debts.fssp[i].amount if debts.fssp[i] is defined else '' }}" step="0.01" min="0" placeholder="150 000">
+                </div>
+                <div style="flex: 1; min-width: 140px;">
+                    <label style="font-size: .8rem; color: #64748b;">Номер ИП</label>
+                    <input type="text" form="collect-form" name="fssp_number_{{ i }}" value="{{ debts.fssp[i].number if debts.fssp[i] is defined else '' }}" placeholder="12345/23/50001-ИП">
+                </div>
+                <div style="flex: 1; min-width: 120px;">
+                    <label style="font-size: .8rem; color: #64748b;">Предмет (что взыскивают)</label>
+                    <input type="text" form="collect-form" name="fssp_subject_{{ i }}" value="{{ debts.fssp[i].subject if debts.fssp[i] is defined else '' }}" placeholder="Кредит / Налог / Штраф">
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <button type="button" onclick="addRow('fssp')" style="background: none; border: 1px dashed #94a3b8; border-radius: 8px; padding: .5rem 1rem; color: #64748b; cursor: pointer; font-size: .85rem; width: 100%;">
+        + Добавить ещё исполнительное производство
+    </button>
+</div>
+
+<!-- ШАГ 2: ФНС -->
+<div class="card" id="fns">
+    <div style="display: flex; align-items: center; gap: .8rem; margin-bottom: 1rem;">
+        <div style="width: 36px; height: 36px; border-radius: 50%; background: #16a34a; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">2</div>
+        <h2 style="margin: 0;">ФНС — Налоговые долги</h2>
+    </div>
+
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.2rem; margin-bottom: 1.2rem;">
+        <div style="font-weight: 700; color: #166534; margin-bottom: .8rem;">Инструкция:</div>
+        <ol style="font-size: .9rem; color: #14532d; line-height: 2; padding-left: 1.5rem; margin: 0;">
+            <li>Откройте <a href="https://lkfl2.nalog.ru/" target="_blank" style="font-weight: 700;">lkfl2.nalog.ru</a> (Личный кабинет ФНС)</li>
+            <li>Войдите через <b>Госуслуги</b></li>
+            <li>На главной странице видна <b>сумма задолженности</b></li>
+            <li>Нажмите на задолженность — увидите расшифровку по налогам</li>
+            <li>Введите ниже каждый налоговый долг</li>
+        </ol>
+        <div style="font-size: .8rem; color: #166534; margin-top: .5rem;">
+            <b>Альтернатива:</b> <a href="https://service.nalog.ru/debt/" target="_blank">service.nalog.ru/debt</a> — проверка по ИНН (без авторизации, только просроченные)
+        </div>
+    </div>
+
+    <div id="fns-debts">
+        {% for i in range(fns_count) %}
+        <div class="debt-row" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem;">
+            <div style="display: flex; gap: .8rem; flex-wrap: wrap; align-items: end;">
+                <div style="flex: 2; min-width: 200px;">
+                    <label style="font-size: .8rem; color: #64748b;">Вид налога</label>
+                    <select form="collect-form" name="fns_type_{{ i }}">
+                        <option value="ndfl">НДФЛ (подоходный)</option>
+                        <option value="property">Имущественный налог</option>
+                        <option value="transport">Транспортный налог</option>
+                        <option value="land">Земельный налог</option>
+                        <option value="penalty">Пени / штрафы</option>
+                        <option value="other">Другое</option>
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 140px;">
+                    <label style="font-size: .8rem; color: #64748b;">Сумма, руб.</label>
+                    <input type="number" form="collect-form" name="fns_amount_{{ i }}" value="{{ debts.fns[i].amount if debts.fns[i] is defined else '' }}" step="0.01" min="0" placeholder="15 000">
+                </div>
+                <div style="flex: 1; min-width: 120px;">
+                    <label style="font-size: .8rem; color: #64748b;">Год</label>
+                    <input type="text" form="collect-form" name="fns_year_{{ i }}" value="{{ debts.fns[i].year if debts.fns[i] is defined else '' }}" placeholder="2024">
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <button type="button" onclick="addRow('fns')" style="background: none; border: 1px dashed #94a3b8; border-radius: 8px; padding: .5rem 1rem; color: #64748b; cursor: pointer; font-size: .85rem; width: 100%;">
+        + Добавить налоговый долг
+    </button>
+</div>
+
+<!-- ШАГ 3: КАД Арбитр -->
+<div class="card" id="kad">
+    <div style="display: flex; align-items: center; gap: .8rem; margin-bottom: 1rem;">
+        <div style="width: 36px; height: 36px; border-radius: 50%; background: #9333ea; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">3</div>
+        <h2 style="margin: 0;">КАД Арбитр — Арбитражные дела</h2>
+    </div>
+
+    <div style="background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 10px; padding: 1.2rem; margin-bottom: 1.2rem;">
+        <div style="font-weight: 700; color: #6b21a8; margin-bottom: .8rem;">Инструкция:</div>
+        <ol style="font-size: .9rem; color: #581c87; line-height: 2; padding-left: 1.5rem; margin: 0;">
+            <li>Откройте <a href="https://kad.arbitr.ru/" target="_blank" style="font-weight: 700;">kad.arbitr.ru</a></li>
+            <li>В поле "Участник дела" введите свою <b>фамилию</b> или <b>ИНН</b></li>
+            <li>Нажмите "Найти"</li>
+            <li>Для каждого найденного дела введите данные ниже</li>
+        </ol>
+    </div>
+
+    <div id="kad-debts">
+        {% for i in range(kad_count) %}
+        <div class="debt-row" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem;">
+            <div style="display: flex; gap: .8rem; flex-wrap: wrap; align-items: end;">
+                <div style="flex: 1; min-width: 160px;">
+                    <label style="font-size: .8rem; color: #64748b;">Номер дела</label>
+                    <input type="text" form="collect-form" name="kad_number_{{ i }}" value="{{ debts.kad[i].number if debts.kad[i] is defined else '' }}" placeholder="А41-12345/2024">
+                </div>
+                <div style="flex: 2; min-width: 200px;">
+                    <label style="font-size: .8rem; color: #64748b;">Истец (кто подал)</label>
+                    <input type="text" form="collect-form" name="kad_plaintiff_{{ i }}" value="{{ debts.kad[i].plaintiff if debts.kad[i] is defined else '' }}" placeholder="ООО Банк / ФНС...">
+                </div>
+                <div style="flex: 1; min-width: 120px;">
+                    <label style="font-size: .8rem; color: #64748b;">Сумма иска, руб.</label>
+                    <input type="number" form="collect-form" name="kad_amount_{{ i }}" value="{{ debts.kad[i].amount if debts.kad[i] is defined else '' }}" step="0.01" min="0">
+                </div>
+                <div style="flex: 1; min-width: 100px;">
+                    <label style="font-size: .8rem; color: #64748b;">Статус</label>
+                    <select form="collect-form" name="kad_status_{{ i }}">
+                        <option value="active">В процессе</option>
+                        <option value="decided">Решено</option>
+                        <option value="appeal">Апелляция</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <button type="button" onclick="addRow('kad')" style="background: none; border: 1px dashed #94a3b8; border-radius: 8px; padding: .5rem 1rem; color: #64748b; cursor: pointer; font-size: .85rem; width: 100%;">
+        + Добавить арбитражное дело
+    </button>
+</div>
+
+<!-- ШАГ 4: Другие долги -->
+<div class="card" id="other">
+    <div style="display: flex; align-items: center; gap: .8rem; margin-bottom: 1rem;">
+        <div style="width: 36px; height: 36px; border-radius: 50%; background: #f59e0b; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">4</div>
+        <h2 style="margin: 0;">Другие долги</h2>
+    </div>
+
+    <div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 10px; padding: 1rem; margin-bottom: 1.2rem; font-size: .9rem; color: #854d0e;">
+        Кредиты, микрозаймы, долги по ЖКХ, алименты и другие обязательства,
+        которых нет на ФССП (ещё не переданы приставам).
+        Проверьте свою <b>кредитную историю</b> на <a href="https://www.gosuslugi.ru/600362/1" target="_blank">Госуслугах</a>.
+    </div>
+
+    <div id="other-debts">
+        {% for i in range(other_count) %}
+        <div class="debt-row" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem;">
+            <div style="display: flex; gap: .8rem; flex-wrap: wrap; align-items: end;">
+                <div style="flex: 2; min-width: 200px;">
+                    <label style="font-size: .8rem; color: #64748b;">Кредитор</label>
+                    <input type="text" form="collect-form" name="other_creditor_{{ i }}" value="{{ debts.other[i].creditor if debts.other[i] is defined else '' }}" placeholder="Банк / МФО / ЖКХ...">
+                </div>
+                <div style="flex: 1; min-width: 120px;">
+                    <label style="font-size: .8rem; color: #64748b;">Сумма, руб.</label>
+                    <input type="number" form="collect-form" name="other_amount_{{ i }}" value="{{ debts.other[i].amount if debts.other[i] is defined else '' }}" step="0.01" min="0">
+                </div>
+                <div style="flex: 1; min-width: 140px;">
+                    <label style="font-size: .8rem; color: #64748b;">Тип</label>
+                    <select form="collect-form" name="other_type_{{ i }}">
+                        <option value="credit">Кредит</option>
+                        <option value="microloan">Микрозайм</option>
+                        <option value="mortgage">Ипотека</option>
+                        <option value="utility">ЖКХ</option>
+                        <option value="alimony">Алименты</option>
+                        <option value="other">Другое</option>
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 140px;">
+                    <label style="font-size: .8rem; color: #64748b;">N договора</label>
+                    <input type="text" form="collect-form" name="other_contract_{{ i }}" value="{{ debts.other[i].contract if debts.other[i] is defined else '' }}" placeholder="Номер">
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <button type="button" onclick="addRow('other')" style="background: none; border: 1px dashed #94a3b8; border-radius: 8px; padding: .5rem 1rem; color: #64748b; cursor: pointer; font-size: .85rem; width: 100%;">
+        + Добавить долг
+    </button>
+</div>
+
+<!-- Итого и кнопка -->
+<div class="card">
+    <form method="POST" action="/collect" id="collect-form">
+        <input type="hidden" name="last_name" value="{{ last_name }}">
+        <input type="hidden" name="first_name" value="{{ first_name }}">
+        <input type="hidden" name="middle_name" value="{{ middle_name }}">
+        <input type="hidden" name="inn" value="{{ inn }}">
+        <input type="hidden" name="region" value="{{ region }}">
+
+        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 1rem; margin-bottom: 1.5rem; text-align: center;">
+            <span style="font-size: .9rem; color: #7f1d1d;">Когда заполните все долги, нажмите:</span>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: .8rem; font-size: 1.1rem; text-align: center;">
+            Готово — перейти к процедуре банкротства
+        </button>
+    </form>
+</div>
+
+<script>
+const rowCounters = {fssp: {{ fssp_count }}, fns: {{ fns_count }}, kad: {{ kad_count }}, other: {{ other_count }}};
+
+const templates = {
+    fssp: (i) => `<div class="debt-row" style="background:#f8fafc;border-radius:10px;padding:1rem;margin-bottom:.8rem">
+        <div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:end">
+            <div style="flex:2;min-width:200px"><label style="font-size:.8rem;color:#64748b">Кредитор</label>
+                <input type="text" form="collect-form" name="fssp_creditor_${i}" placeholder="Сбербанк / ФНС..."></div>
+            <div style="flex:1;min-width:120px"><label style="font-size:.8rem;color:#64748b">Сумма, руб.</label>
+                <input type="number" form="collect-form" name="fssp_amount_${i}" step="0.01" min="0"></div>
+            <div style="flex:1;min-width:140px"><label style="font-size:.8rem;color:#64748b">Номер ИП</label>
+                <input type="text" form="collect-form" name="fssp_number_${i}" placeholder="12345/23/50001-ИП"></div>
+            <div style="flex:1;min-width:120px"><label style="font-size:.8rem;color:#64748b">Предмет</label>
+                <input type="text" form="collect-form" name="fssp_subject_${i}" placeholder="Кредит / Налог"></div>
+        </div></div>`,
+    fns: (i) => `<div class="debt-row" style="background:#f8fafc;border-radius:10px;padding:1rem;margin-bottom:.8rem">
+        <div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:end">
+            <div style="flex:2;min-width:200px"><label style="font-size:.8rem;color:#64748b">Вид налога</label>
+                <select form="collect-form" name="fns_type_${i}"><option value="ndfl">НДФЛ</option><option value="property">Имущественный</option><option value="transport">Транспортный</option><option value="land">Земельный</option><option value="penalty">Пени</option><option value="other">Другое</option></select></div>
+            <div style="flex:1;min-width:140px"><label style="font-size:.8rem;color:#64748b">Сумма, руб.</label>
+                <input type="number" form="collect-form" name="fns_amount_${i}" step="0.01" min="0"></div>
+            <div style="flex:1;min-width:120px"><label style="font-size:.8rem;color:#64748b">Год</label>
+                <input type="text" form="collect-form" name="fns_year_${i}" placeholder="2024"></div>
+        </div></div>`,
+    kad: (i) => `<div class="debt-row" style="background:#f8fafc;border-radius:10px;padding:1rem;margin-bottom:.8rem">
+        <div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:end">
+            <div style="flex:1;min-width:160px"><label style="font-size:.8rem;color:#64748b">Номер дела</label>
+                <input type="text" form="collect-form" name="kad_number_${i}" placeholder="А41-12345/2024"></div>
+            <div style="flex:2;min-width:200px"><label style="font-size:.8rem;color:#64748b">Истец</label>
+                <input type="text" form="collect-form" name="kad_plaintiff_${i}"></div>
+            <div style="flex:1;min-width:120px"><label style="font-size:.8rem;color:#64748b">Сумма, руб.</label>
+                <input type="number" form="collect-form" name="kad_amount_${i}" step="0.01" min="0"></div>
+            <div style="flex:1;min-width:100px"><label style="font-size:.8rem;color:#64748b">Статус</label>
+                <select form="collect-form" name="kad_status_${i}"><option value="active">В процессе</option><option value="decided">Решено</option><option value="appeal">Апелляция</option></select></div>
+        </div></div>`,
+    other: (i) => `<div class="debt-row" style="background:#f8fafc;border-radius:10px;padding:1rem;margin-bottom:.8rem">
+        <div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:end">
+            <div style="flex:2;min-width:200px"><label style="font-size:.8rem;color:#64748b">Кредитор</label>
+                <input type="text" form="collect-form" name="other_creditor_${i}"></div>
+            <div style="flex:1;min-width:120px"><label style="font-size:.8rem;color:#64748b">Сумма, руб.</label>
+                <input type="number" form="collect-form" name="other_amount_${i}" step="0.01" min="0"></div>
+            <div style="flex:1;min-width:140px"><label style="font-size:.8rem;color:#64748b">Тип</label>
+                <select form="collect-form" name="other_type_${i}"><option value="credit">Кредит</option><option value="microloan">Микрозайм</option><option value="mortgage">Ипотека</option><option value="utility">ЖКХ</option><option value="alimony">Алименты</option><option value="other">Другое</option></select></div>
+            <div style="flex:1;min-width:140px"><label style="font-size:.8rem;color:#64748b">N договора</label>
+                <input type="text" form="collect-form" name="other_contract_${i}"></div>
+        </div></div>`
+};
+
+function addRow(type) {
+    const container = document.getElementById(type + '-debts');
+    const i = rowCounters[type]++;
+    container.insertAdjacentHTML('beforeend', templates[type](i));
+}
+</script>
+
+{% endblock %}
