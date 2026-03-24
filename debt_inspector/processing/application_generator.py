@@ -110,6 +110,35 @@ def generate_court_application(pipeline_data: dict, output_path: Path) -> Path:
         "исполнения денежных обязательств в полном объёме перед другими кредиторами.",
     )
 
+    # Неизвестные кредиторы
+    if d.get("has_unknown_creditors"):
+        total_estimated = d.get("total_estimated_debt", 0)
+        _add_paragraph(doc, "", space_after=4)
+        if total_estimated and total_estimated > total_debt:
+            _add_paragraph(
+                doc,
+                f"Общая сумма обязательств оценивается мною приблизительно в "
+                f"{_fmt_money(total_estimated)} руб. Помимо указанных выше кредиторов, "
+                f"у меня имеются иные неисполненные обязательства, точные данные по которым "
+                f"(наименования кредиторов, суммы задолженности, реквизиты договоров) "
+                f"мне не известны в полном объёме.",
+            )
+        else:
+            _add_paragraph(
+                doc,
+                "Помимо указанных выше кредиторов, у меня имеются иные неисполненные "
+                "обязательства, точные данные по которым мне не известны в полном объёме.",
+            )
+        _add_paragraph(
+            doc,
+            "Прошу суд обязать финансового управляющего установить полный перечень "
+            "кредиторов на основании данных бюро кредитных историй, ФССП, ФНС и "
+            "иных источников информации.",
+        )
+        note = d.get("unknown_creditors_note", "")
+        if note:
+            _add_paragraph(doc, f"Дополнительно сообщаю: {note}", font_size=11)
+
     # Имущество
     properties = d.get("properties", [])
     has_property = any(p.get("property_type") for p in properties)

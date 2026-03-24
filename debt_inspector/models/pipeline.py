@@ -115,6 +115,11 @@ class BankruptcyPipeline(BaseModel):
     # Документы
     document_statuses: list[DocumentStatus] = Field(default_factory=list)
 
+    # Неизвестные кредиторы
+    has_unknown_creditors: bool = False
+    total_estimated_debt: float = 0.0
+    unknown_creditors_note: str = ""
+
     # Ускорение процедуры
     skip_restructuring: bool = False   # Ходатайство о пропуске реструктуризации (ст. 213.6 п.8)
     acceleration_tips: list[str] = Field(default_factory=list)

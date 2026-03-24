@@ -1179,8 +1179,13 @@ async def collect_submit(request: Request):
         })
 
     # Создаём pipeline из собранных данных
-    total_debt = sum(c.amount for c in creditors)
-    route = determine_route(total_debt)
+    total_debt_known = sum(c.amount for c in creditors)
+    total_estimated = float(form.get("total_estimated_debt", 0) or 0)
+    has_unknown = bool(form.get("has_unknown_creditors"))
+
+    # Для маршрута используем максимум из известного и оценочного
+    total_for_route = max(total_debt_known, total_estimated) if total_estimated else total_debt_known
+    route = determine_route(total_for_route)
 
     region = form.get("region", "")
     court_name = determine_court(region) if region else "Арбитражный суд по месту жительства"
@@ -1193,10 +1198,13 @@ async def collect_submit(request: Request):
         middle_name=form.get("middle_name", ""),
         inn=form.get("inn", ""),
         region=region,
-        total_debt=total_debt,
+        total_debt=total_for_route,
         creditors=creditors,
         route=route.value,
         court_name=court_name,
+        has_unknown_creditors=has_unknown,
+        total_estimated_debt=total_estimated,
+        unknown_creditors_note=form.get("unknown_creditors_note", ""),
     )
 
     _save_pipeline_data(pid, pipeline)
