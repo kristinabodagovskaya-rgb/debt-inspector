@@ -1,0 +1,440 @@
+{% extends "pipeline/base_pipeline.html" %}
+{% block title %}Подача в суд — Debt Inspector{% endblock %}
+{% block pipeline_content %}
+
+{% if pipeline.route == 'court' %}
+{# ========== СУДЕБНОЕ БАНКРОТСТВО ========== #}
+
+<!-- 1. Арбитражный суд: адрес, контакты, реквизиты -->
+<div class="card">
+    <h1>Подача в арбитражный суд</h1>
+    <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        Полная информация для подачи заявления о банкротстве
+    </p>
+
+    <!-- Суд -->
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <h2 style="color: #1e40af; margin-bottom: .8rem;">1. Арбитражный суд</h2>
+        <div style="font-size: 1.1rem; font-weight: 700; color: #1e3a8a; margin-bottom: .8rem;">
+            {{ pipeline.court_name }}
+        </div>
+        {% if court_details %}
+        <table style="font-size: .9rem; width: 100%;">
+            <tr><td style="padding: .4rem .8rem; font-weight: 600; width: 160px; vertical-align: top;">Адрес</td>
+                <td style="padding: .4rem .8rem;">{{ court_details.address }}</td></tr>
+            <tr><td style="padding: .4rem .8rem; font-weight: 600; vertical-align: top;">Телефон</td>
+                <td style="padding: .4rem .8rem;">{{ court_details.phone }}</td></tr>
+            <tr><td style="padding: .4rem .8rem; font-weight: 600; vertical-align: top;">Сайт</td>
+                <td style="padding: .4rem .8rem;"><b>{{ court_details.site }}</b></td></tr>
+            <tr><td style="padding: .4rem .8rem; font-weight: 600; vertical-align: top;">Электронная подача</td>
+                <td style="padding: .4rem .8rem;"><b>{{ court_details.my_arbitr }}</b> (через Госуслуги)</td></tr>
+            <tr><td style="padding: .4rem .8rem; font-weight: 600; vertical-align: top;">Режим работы</td>
+                <td style="padding: .4rem .8rem;">{{ court_details.schedule }}</td></tr>
+        </table>
+        {% else %}
+        <p style="font-size: .9rem; color: #1e40af; line-height: 1.6;">
+            Адрес и реквизиты суда уточните на сайте <b>arbitr.ru</b> &rarr; "Арбитражные суды" &rarr; выберите ваш суд.
+            <br>Электронная подача: <b>my.arbitr.ru</b> (авторизация через Госуслуги).
+        </p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 2. Выбор СРО арбитражных управляющих -->
+<div class="card">
+    <h2 style="margin-bottom: .5rem;">2. Выбор СРО арбитражных управляющих</h2>
+    <p style="color: #64748b; font-size: .85rem; margin-bottom: 1rem;">
+        В заявлении нужно указать СРО, из числа членов которой будет назначен финансовый управляющий.
+        Выберите СРО из списка ниже. Рекомендуем выбирать СРО, работающие в вашем регионе.
+    </p>
+
+    {% if pipeline.selected_sro %}
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1rem; margin-bottom: 1rem;">
+        <div style="font-weight: 700; color: #166534; margin-bottom: .3rem;">Выбрано:</div>
+        <div style="font-size: .9rem; color: #14532d;">{{ pipeline.selected_sro }}</div>
+        {% if pipeline.selected_sro_address %}
+        <div style="font-size: .85rem; color: #166534; margin-top: .2rem;">{{ pipeline.selected_sro_address }}</div>
+        {% endif %}
+        {% if pipeline.selected_sro_inn %}
+        <div style="font-size: .85rem; color: #166534; margin-top: .1rem;">ИНН: {{ pipeline.selected_sro_inn }}</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div style="display: flex; flex-direction: column; gap: .8rem;">
+        {% for sro in sro_list %}
+        <div style="background: {% if pipeline.selected_sro == sro.name %}#f0fdf4; border: 2px solid #22c55e;{% else %}#f8fafc; border: 1px solid #e2e8f0;{% endif %} border-radius: 10px; padding: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+                <div style="flex: 1;">
+                    <div style="font-weight: 700; font-size: .95rem; color: #334155; margin-bottom: .3rem;">
+                        {{ sro.short_name }}
+                    </div>
+                    <div style="font-size: .8rem; color: #64748b; margin-bottom: .3rem;">{{ sro.name }}</div>
+                    <div style="font-size: .8rem; color: #475569;">
+                        {{ sro.address }}<br>
+                        Тел.: {{ sro.phone }} | Сайт: {{ sro.site }}<br>
+                        ИНН: {{ sro.inn }}
+                    </div>
+                    <div style="font-size: .75rem; color: #94a3b8; margin-top: .3rem;">
+                        Регионы: {{ sro.regions|join(', ') }}
+                    </div>
+                </div>
+                <form method="POST" action="/pipeline/{{ pid }}/filing" style="flex-shrink: 0;">
+                    <input type="hidden" name="selected_sro" value="{{ sro.name }}">
+                    <input type="hidden" name="selected_sro_address" value="{{ sro.address }}">
+                    <input type="hidden" name="selected_sro_inn" value="{{ sro.inn }}">
+                    {% if pipeline.selected_sro == sro.name %}
+                    <span class="badge badge-green" style="padding: .4rem .8rem;">Выбрано</span>
+                    {% else %}
+                    <button type="submit" class="btn btn-secondary btn-sm">Выбрать</button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div style="background: #fefce8; border-radius: 8px; padding: .8rem; margin-top: 1rem; font-size: .85rem; color: #854d0e;">
+        <b>Как выбрать СРО?</b> Рекомендации:<br>
+        &bull; Выбирайте СРО, работающие в вашем регионе — больше управляющих на месте<br>
+        &bull; Проверьте отзывы на сайте ЕФРСБ (<b>bankrot.fedresurs.ru</b>)<br>
+        &bull; Можно позвонить в СРО и уточнить, есть ли свободные управляющие для вашего дела<br>
+        &bull; Суд выбирает конкретного управляющего из СРО, но вы можете заранее договориться
+    </div>
+</div>
+
+<!-- 5. Способы подачи заявления -->
+<div class="card">
+    <h2 style="margin-bottom: 1rem;">3. Способы подачи заявления</h2>
+
+    <div style="margin-bottom: 1.5rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.2rem;">
+        <div style="font-weight: 700; color: #166534; margin-bottom: .5rem;">Способ 1: Через "Мой Арбитр" (рекомендуется)</div>
+        <ol style="font-size: .9rem; line-height: 1.8; color: #14532d; padding-left: 1.5rem;">
+            <li>Зайдите на <b>my.arbitr.ru</b></li>
+            <li>Авторизуйтесь через Госуслуги (ЕСИА)</li>
+            <li>Выберите <b>"Банкротство"</b> &rarr; <b>"Заявление должника о признании банкротом"</b></li>
+            <li>Выберите суд: <b>{{ pipeline.court_name }}</b></li>
+            <li>Заполните форму и прикрепите все документы (сканы или фото в PDF)</li>
+            {% if pipeline.selected_sro %}
+            <li>В поле "СРО": укажите <b>{{ pipeline.selected_sro }}</b> (ИНН {{ pipeline.selected_sro_inn }})</li>
+            {% endif %}
+            <li>Подпишите усиленной квалифицированной электронной подписью (УКЭП) или через Госуслуги</li>
+            <li>Отправьте — суд получит заявление мгновенно</li>
+        </ol>
+    </div>
+
+    <div style="margin-bottom: 1.5rem; background: #f8fafc; border-radius: 10px; padding: 1.2rem;">
+        <div style="font-weight: 700; color: #334155; margin-bottom: .5rem;">Способ 2: Лично через канцелярию суда</div>
+        <ol style="font-size: .9rem; line-height: 1.8; color: #475569; padding-left: 1.5rem;">
+            <li>Распечатайте заявление и все приложения</li>
+            <li>Подготовьте <b>2 экземпляра</b> заявления (для суда и для вас с отметкой о принятии)</li>
+            {% if court_details %}
+            <li>Приходите по адресу: <b>{{ court_details.address }}</b></li>
+            <li>Режим работы: {{ court_details.schedule }}</li>
+            {% else %}
+            <li>Приходите в канцелярию суда в рабочее время</li>
+            {% endif %}
+            <li>Получите на вашем экземпляре штамп канцелярии с датой и входящим номером</li>
+        </ol>
+    </div>
+
+    <div style="background: #f8fafc; border-radius: 10px; padding: 1.2rem;">
+        <div style="font-weight: 700; color: #334155; margin-bottom: .5rem;">Способ 3: Почтой России</div>
+        <ol style="font-size: .9rem; line-height: 1.8; color: #475569; padding-left: 1.5rem;">
+            {% if court_details %}
+            <li>Адрес суда: <b>{{ court_details.address }}</b></li>
+            {% endif %}
+            <li>Отправьте <b>заказным письмом</b> с уведомлением о вручении и <b>описью вложения</b></li>
+            <li>Сохраните квитанцию и трек-номер — датой подачи считается дата отправки</li>
+        </ol>
+    </div>
+</div>
+
+<!-- 6. Итоговая сводка расходов -->
+<div class="card">
+    <h2 style="margin-bottom: 1rem;">4. Сводка расходов</h2>
+    <table style="width: 100%; font-size: .95rem;">
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: .6rem .8rem;">Госпошлина</td>
+            <td style="padding: .6rem .8rem; text-align: right; font-weight: 600;">300 руб.</td>
+            <td style="padding: .6rem .8rem; font-size: .8rem; color: #64748b;">обязательно</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: .6rem .8rem;">Депозит на фин. управляющего</td>
+            <td style="padding: .6rem .8rem; text-align: right; font-weight: 600;">25 000 руб.</td>
+            <td style="padding: .6rem .8rem; font-size: .8rem; color: #64748b;">обязательно</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: .6rem .8rem;">Публикация в ЕФРСБ (Коммерсантъ)</td>
+            <td style="padding: .6rem .8rem; text-align: right; font-weight: 600;">~12 000 руб.</td>
+            <td style="padding: .6rem .8rem; font-size: .8rem; color: #64748b;">оплачивает управляющий из конк. массы</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: .6rem .8rem;">Выписка ЕГРН</td>
+            <td style="padding: .6rem .8rem; text-align: right; font-weight: 600;">350 руб.</td>
+            <td style="padding: .6rem .8rem; font-size: .8rem; color: #64748b;">если нет</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: .6rem .8rem;">Почтовые расходы</td>
+            <td style="padding: .6rem .8rem; text-align: right; font-weight: 600;">~500 руб.</td>
+            <td style="padding: .6rem .8rem; font-size: .8rem; color: #64748b;">если подача почтой</td>
+        </tr>
+        <tr style="background: #f8fafc; font-weight: 700; border-top: 2px solid #e2e8f0;">
+            <td style="padding: .8rem; font-size: 1rem;">ИТОГО минимум:</td>
+            <td style="padding: .8rem; text-align: right; font-size: 1.1rem; color: #dc2626;">25 300 руб.</td>
+            <td style="padding: .8rem;"></td>
+        </tr>
+    </table>
+</div>
+
+<!-- 7. Чек-лист -->
+<div class="card">
+    <h2 style="margin-bottom: .8rem;">5. Финальный чек-лист</h2>
+    <p style="color: #64748b; font-size: .85rem; margin-bottom: 1rem;">Отметьте всё, что готово. Для подачи нужны все обязательные пункты.</p>
+    <ul style="font-size: .9rem; line-height: 2.2; list-style: none; padding: 0;">
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Заявление о банкротстве (2 экз.) — <a href="/pipeline/{{ pid }}/download?doc=application">скачать</a></span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Список кредиторов — <a href="/pipeline/{{ pid }}/download?doc=creditors">скачать</a></span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Опись имущества — <a href="/pipeline/{{ pid }}/download?doc=inventory">скачать</a></span>
+        </label></li>
+        {% if pipeline.skip_restructuring %}
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Ходатайство о пропуске реструктуризации — <a href="/pipeline/{{ pid }}/download?doc=petition">скачать</a></span>
+        </label></li>
+        {% endif %}
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Госпошлина оплачена (300 руб.)</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Депозит внесён (25 000 руб.)</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>СРО выбрано{% if pipeline.selected_sro %}: {{ pipeline.selected_sro }}{% endif %}</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Паспорт (оригинал + копия всех страниц)</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>ИНН (копия)</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>СНИЛС (копия)</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Справки 2-НДФЛ за 3 года</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Выписка из ЕГРН</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Справка ГИБДД</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Выписки из банков</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Копии кредитных договоров</span>
+        </label></li>
+    </ul>
+</div>
+
+<!-- 8. Что будет после подачи -->
+<div class="card">
+    <h2 style="margin-bottom: .8rem;">6. Что будет после подачи</h2>
+    <div style="display: flex; flex-direction: column; gap: 1rem;">
+        <div style="background: #f8fafc; border-radius: 10px; padding: 1rem; border-left: 4px solid #3b82f6;">
+            <div style="font-weight: 700; color: #1e40af;">1-5 рабочих дней</div>
+            <div style="font-size: .9rem; color: #475569;">Суд принимает заявление к производству. Если чего-то не хватает — оставит без движения (дадут срок для исправления).</div>
+        </div>
+        <div style="background: #f8fafc; border-radius: 10px; padding: 1rem; border-left: 4px solid #f59e0b;">
+            <div style="font-weight: 700; color: #854d0e;">2-3 месяца</div>
+            <div style="font-size: .9rem; color: #475569;">Первое судебное заседание. Суд проверяет обоснованность заявления и вводит одну из процедур.</div>
+        </div>
+        <div style="background: #f8fafc; border-radius: 10px; padding: 1rem; border-left: 4px solid #8b5cf6;">
+            <div style="font-weight: 700; color: #6d28d9;">Реструктуризация долгов (до 3 лет)</div>
+            <div style="font-size: .9rem; color: #475569;">Если есть стабильный доход — составляется план погашения. Проценты и штрафы замораживаются.</div>
+        </div>
+        <div style="background: #f8fafc; border-radius: 10px; padding: 1rem; border-left: 4px solid #dc2626;">
+            <div style="font-weight: 700; color: #991b1b;">Реализация имущества (6-12 мес.)</div>
+            <div style="font-size: .9rem; color: #475569;">Финансовый управляющий продаёт имущество (кроме единственного жилья, предметов быта, зарплаты в пределах прожиточного минимума). Вырученные средства распределяются между кредиторами.</div>
+        </div>
+        <div style="background: #f0fdf4; border-radius: 10px; padding: 1rem; border-left: 4px solid #16a34a;">
+            <div style="font-weight: 700; color: #166534;">Завершение — списание долгов</div>
+            <div style="font-size: .9rem; color: #14532d;">Суд выносит определение об освобождении от обязательств. Все долги списаны, кроме: алиментов, возмещения вреда здоровью, субсидиарной ответственности.</div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+{# ========== ВНЕСУДЕБНОЕ ЧЕРЕЗ МФЦ ========== #}
+
+<div class="card">
+    <h1>Подача через МФЦ</h1>
+    <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        Внесудебное банкротство — бесплатная процедура через МФЦ
+    </p>
+
+    <!-- Куда подавать -->
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <h2 style="color: #166534; margin-bottom: .8rem;">1. Куда подавать</h2>
+        <div style="font-size: 1.1rem; font-weight: 700; color: #14532d; margin-bottom: .5rem;">
+            МФЦ по месту жительства (регистрации)
+        </div>
+        <p style="font-size: .9rem; color: #166534; line-height: 1.6;">
+            Регион: <b>{{ pipeline.region }}</b><br>
+            Найти ближайший МФЦ: <b>мфц.рф</b> или <b>gosuslugi.ru</b> &rarr; "Найти отделение"<br>
+            Запишитесь на приём заранее (онлайн или по телефону).
+        </p>
+    </div>
+</div>
+
+<!-- Стоимость -->
+<div class="card">
+    <h2 style="margin-bottom: 1rem;">2. Стоимость</h2>
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.5rem; text-align: center;">
+        <div style="font-size: 2rem; font-weight: 700; color: #16a34a;">Бесплатно</div>
+        <div style="font-size: .9rem; color: #166534; margin-top: .5rem;">
+            Госпошлина — нет. Депозит — нет. Арбитражный управляющий — не назначается.
+        </div>
+    </div>
+</div>
+
+<!-- Порядок подачи -->
+<div class="card">
+    <h2 style="margin-bottom: 1rem;">3. Порядок подачи</h2>
+    <ol style="font-size: .9rem; line-height: 2.2; color: #475569; padding-left: 1.5rem;">
+        <li>Запишитесь на приём в МФЦ по месту жительства</li>
+        <li>Возьмите с собой: <b>паспорт, СНИЛС, ИНН</b>, заполненное заявление и список кредиторов</li>
+        <li>Специалист МФЦ проверит заявление и примет его</li>
+        <li>МФЦ проверит в базе ФССП, что ваши ИП действительно окончены по ст. 46</li>
+        <li>В течение 3 рабочих дней информация публикуется в ЕФРСБ</li>
+        <li>Через <b>6 месяцев</b> процедура завершится автоматически</li>
+    </ol>
+</div>
+
+<!-- Чек-лист МФЦ -->
+<div class="card">
+    <h2 style="margin-bottom: .8rem;">4. Чек-лист: что взять в МФЦ</h2>
+    <ul style="font-size: .9rem; line-height: 2.2; list-style: none; padding: 0;">
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Паспорт (оригинал)</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>СНИЛС</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>ИНН</span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Заявление (заполненное) — <a href="/pipeline/{{ pid }}/download?doc=application">скачать</a></span>
+        </label></li>
+        <li><label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" style="width: auto;">
+            <span>Список кредиторов — <a href="/pipeline/{{ pid }}/download?doc=creditors">скачать</a></span>
+        </label></li>
+    </ul>
+</div>
+
+<!-- Что будет после подачи -->
+<div class="card">
+    <h2 style="margin-bottom: .8rem;">5. Что будет после подачи</h2>
+    <div style="display: flex; flex-direction: column; gap: 1rem;">
+        <div style="background: #f8fafc; border-radius: 10px; padding: 1rem; border-left: 4px solid #3b82f6;">
+            <div style="font-weight: 700; color: #1e40af;">3 рабочих дня</div>
+            <div style="font-size: .9rem; color: #475569;">МФЦ проверяет данные в ФССП и публикует сведения в Едином федеральном реестре (ЕФРСБ).</div>
+        </div>
+        <div style="background: #f8fafc; border-radius: 10px; padding: 1rem; border-left: 4px solid #f59e0b;">
+            <div style="font-weight: 700; color: #854d0e;">6 месяцев — период банкротства</div>
+            <div style="font-size: .9rem; color: #475569;">
+                В это время:<br>
+                &bull; Прекращается начисление процентов, пеней и штрафов<br>
+                &bull; Приостанавливаются исполнительные производства<br>
+                &bull; Кредиторы не могут предъявлять новые требования<br>
+                &bull; Нельзя брать новые кредиты и займы
+            </div>
+        </div>
+        <div style="background: #f0fdf4; border-radius: 10px; padding: 1rem; border-left: 4px solid #16a34a;">
+            <div style="font-weight: 700; color: #166534;">Через 6 месяцев — списание долгов</div>
+            <div style="font-size: .9rem; color: #14532d;">
+                Процедура завершается автоматически. Все долги, указанные в заявлении, списываются.
+                Кроме: алиментов, возмещения вреда здоровью, субсидиарной ответственности.
+            </div>
+        </div>
+    </div>
+
+    <div class="alert alert-warning" style="margin-top: 1rem;">
+        <b>Важно:</b> Если финансовое положение существенно изменится (наследство, высокооплачиваемая работа, новое имущество) —
+        кредиторы могут потребовать прекращения процедуры и перехода в судебное банкротство.
+    </div>
+</div>
+{% endif %}
+
+<!-- Скачать документы -->
+<div class="card" style="background: #f8fafc;">
+    <h2 style="margin-bottom: .8rem;">Скачать документы</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: .8rem;">
+        <a href="/pipeline/{{ pid }}/download?doc=application" class="btn btn-primary">Заявление (DOCX)</a>
+        <a href="/pipeline/{{ pid }}/download?doc=creditors" class="btn btn-secondary">Список кредиторов (DOCX)</a>
+        {% if pipeline.route == 'court' %}
+        <a href="/pipeline/{{ pid }}/download?doc=inventory" class="btn btn-secondary">Опись имущества (DOCX)</a>
+        {% endif %}
+        {% if pipeline.skip_restructuring and pipeline.route == 'court' %}
+        <a href="/pipeline/{{ pid }}/download?doc=petition" class="btn btn-secondary">Ходатайство (DOCX)</a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Навигация -->
+<div class="card">
+    <div style="display: flex; gap: 1rem;">
+        {% if is_mfc %}
+        <a href="/pipeline/{{ pid }}/application" class="btn btn-secondary">Назад</a>
+        {% else %}
+        <a href="/pipeline/{{ pid }}/payment" class="btn btn-secondary">Назад</a>
+        {% endif %}
+        <a href="/search" class="btn btn-primary" style="flex: 1; text-align: center;">
+            Новый поиск
+        </a>
+    </div>
+</div>
+
+<div class="card" style="background: #f0fdf4; border: 1px solid #bbf7d0;">
+    <div style="text-align: center; padding: 1rem;">
+        <div style="font-size: 1.1rem; font-weight: 700; color: #166534; margin-bottom: .5rem;">
+            Процедура банкротства полностью подготовлена
+        </div>
+        <p style="color: #14532d; font-size: .9rem;">
+            Все документы сформированы, реквизиты предоставлены.
+            {% if pipeline.route == 'court' %}
+            Подайте заявление через "Мой Арбитр" или лично в канцелярию суда.
+            {% else %}
+            Обратитесь в МФЦ по месту жительства с подготовленными документами.
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "pipeline/base_pipeline.html" %}
+{% block title %}Чек-лист документов — Debt Inspector{% endblock %}
+{% block pipeline_content %}
+
+<div class="card">
+    <h1>Чек-лист документов</h1>
+    <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        {% if pipeline.route == 'mfc' %}
+            Для подачи через МФЦ потребуется {{ documents|length }} документов
+        {% else %}
+            Для подачи в Арбитражный суд потребуется {{ documents|length }} документов
+        {% endif %}
+    </p>
+
+    {% set critical_missing = [] %}
+    <form method="POST" action="/pipeline/{{ pid }}/documents">
+        <div style="display: flex; flex-direction: column; gap: .5rem;">
+            {% for doc in documents %}
+            {% set status = doc_statuses.get(doc.name, false) %}
+            <div style="background: {% if status %}#f0fdf4{% else %}#f8fafc{% endif %}; border: 1px solid {% if status %}#bbf7d0{% elif doc.is_critical %}#fecaca{% else %}#e2e8f0{% endif %}; border-radius: 10px; padding: 1rem;">
+                <label style="display: flex; align-items: flex-start; gap: .8rem; cursor: pointer; margin-bottom: 0; font-weight: 400;">
+                    <input type="checkbox" name="doc_{{ loop.index0 }}" value="{{ doc.name }}" style="width: auto; margin-top: 3px;"
+                           {% if status %}checked{% endif %}>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; font-size: .95rem;">
+                            {{ doc.name }}
+                            {% if doc.is_critical %}
+                                <span style="color: #dc2626; font-size: .8rem;">*</span>
+                            {% endif %}
+                        </div>
+                        <div style="font-size: .85rem; color: #64748b; margin-top: .2rem;">{{ doc.description }}</div>
+                        <div style="font-size: .8rem; color: #3b82f6; margin-top: .3rem;">
+                            Где получить: {{ doc.where_to_get }}
+                        </div>
+                    </div>
+                </label>
+            </div>
+            {% if doc.is_critical and not status %}
+                {% if critical_missing.append(doc.name) %}{% endif %}
+            {% endif %}
+            {% endfor %}
+        </div>
+
+        {% if critical_missing %}
+        <div class="alert alert-warning" style="margin-top: 1.5rem;">
+            <b>Внимание:</b> {{ critical_missing|length }} обязательных документов не отмечены.
+            Вы можете продолжить, но для подачи заявления они потребуются.
+        </div>
+        {% endif %}
+
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+            <a href="/pipeline/{{ pid }}/creditors" class="btn btn-secondary">Назад</a>
+            <button type="submit" class="btn btn-primary" style="flex: 1; text-align: center;">
+                Далее — Генерация заявления
+            </button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

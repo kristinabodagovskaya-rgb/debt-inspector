@@ -1,0 +1,197 @@
+{% extends "pipeline/base_pipeline.html" %}
+{% block title %}Оценка ситуации — Debt Inspector{% endblock %}
+{% block pipeline_content %}
+
+<div class="card">
+    <h1>Оценка вашей ситуации</h1>
+    <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        На основе найденных долгов определяем оптимальный маршрут банкротства
+    </p>
+
+    <!-- Сводка долгов -->
+    <div class="stats">
+        <div class="stat-card">
+            <div class="number" style="color: #dc2626;">{{ pipeline.total_debt|money0 }}</div>
+            <div class="label">Общая сумма долгов (руб.)</div>
+        </div>
+        <div class="stat-card">
+            <div class="number">{{ pipeline.creditors|length }}</div>
+            <div class="label">Кредиторов найдено</div>
+        </div>
+    </div>
+
+    <!-- Рекомендации по ускорению -->
+    {% if accel_tips %}
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <h2 style="color: #1e40af; margin-bottom: 1rem; font-size: 1.1rem;">Как ускорить процедуру</h2>
+        {% for tip in accel_tips %}
+        <div style="margin-bottom: 1rem; padding-bottom: 1rem; {% if not loop.last %}border-bottom: 1px solid #dbeafe;{% endif %}">
+            <div style="font-weight: 700; color: #1e3a5f; margin-bottom: .3rem;">
+                {{ loop.index }}. {{ tip.title }}
+            </div>
+            <div style="font-size: .85rem; color: #334155; line-height: 1.5; margin-bottom: .3rem;">
+                {{ tip.description }}
+            </div>
+            <div style="font-size: .8rem; color: #2563eb; font-weight: 600;">
+                {{ tip.saving }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if pipeline.route == 'court' %}
+    <!-- Судебное банкротство -->
+    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <div style="font-size: 1.1rem; font-weight: 700; color: #991b1b; margin-bottom: .5rem;">
+            Маршрут: Судебное банкротство
+        </div>
+        <p style="color: #7f1d1d; font-size: .9rem; line-height: 1.6;">
+            Сумма долга превышает 1 000 000 руб. — внесудебное через МФЦ недоступно.
+            Подача заявления в Арбитражный суд по ст. 213.3-213.4 ФЗ-127.
+        </p>
+    </div>
+
+    <div style="background: #f8fafc; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <h2 style="margin-bottom: .8rem;">Условия и расходы</h2>
+        <table style="font-size: .9rem;">
+            <tr><td style="padding: .4rem .8rem; font-weight: 600;">Суд</td>
+                <td style="padding: .4rem .8rem;">{{ pipeline.court_name }}</td></tr>
+            <tr><td style="padding: .4rem .8rem; font-weight: 600;">Госпошлина</td>
+                <td style="padding: .4rem .8rem;">300 руб.</td></tr>
+            <tr><td style="padding: .4rem .8rem; font-weight: 600;">Депозит на управляющего</td>
+                <td style="padding: .4rem .8rem;">25 000 руб.</td></tr>
+            <tr><td style="padding: .4rem .8rem; font-weight: 600;">Срок процедуры</td>
+                <td style="padding: .4rem .8rem;">6-12 месяцев</td></tr>
+            <tr><td style="padding: .4rem .8rem; font-weight: 600;">Общие расходы</td>
+                <td style="padding: .4rem .8rem; font-weight: 700; color: #dc2626;">~25 300 руб. + услуги юриста (опционально)</td></tr>
+        </table>
+    </div>
+
+    <form method="POST" action="/pipeline/{{ pid }}/assessment">
+        <!-- Ускорение: пропуск реструктуризации -->
+        <div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 10px; padding: 1rem; margin-bottom: 1.5rem;">
+            <label style="display: flex; align-items: flex-start; gap: .6rem; cursor: pointer; font-weight: 400; font-size: .9rem;">
+                <input type="checkbox" name="skip_restructuring" value="1" style="width: auto; margin-top: 3px;"
+                       {% if pipeline.skip_restructuring %}checked{% endif %}>
+                <span>Подготовить <b>ходатайство о пропуске реструктуризации</b> (ст. 213.6 п.8 ФЗ-127).
+                    Суд сразу введёт процедуру реализации имущества — это сокращает срок на 3-6 месяцев.
+                    Рекомендуется если ваш доход не позволяет погасить долг за 3 года.</span>
+            </label>
+        </div>
+
+        <button type="submit" name="action" value="continue" class="btn btn-primary" style="width: 100%; text-align: center; padding: .8rem; font-size: 1.05rem;">
+            Продолжить — заполнить анкету
+        </button>
+    </form>
+
+    {% elif pipeline.route == 'mfc' %}
+    <!-- Внесудебное через МФЦ -->
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <div style="font-size: 1.1rem; font-weight: 700; color: #166534; margin-bottom: .5rem;">
+            Маршрут: Внесудебное банкротство через МФЦ
+        </div>
+        <p style="color: #14532d; font-size: .9rem; line-height: 1.6;">
+            Сумма долга от 25 000 до 1 000 000 руб. — подходит бесплатная процедура через МФЦ
+            (ст. 223.2 ФЗ-127, ред. от 01.11.2024).
+        </p>
+    </div>
+
+    <!-- Проверка права на МФЦ -->
+    <form method="POST" action="/pipeline/{{ pid }}/assessment">
+        <div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+            <h2 style="margin-bottom: .8rem; color: #854d0e;">Проверка права на МФЦ</h2>
+            <p style="font-size: .85rem; color: #713f12; margin-bottom: 1rem;">
+                Для подачи через МФЦ нужно одно из оснований:
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: .8rem;">
+                <label style="display: flex; align-items: flex-start; gap: .6rem; cursor: pointer; font-weight: 400; font-size: .9rem;">
+                    <input type="checkbox" name="ip_ended_art46" value="1" style="width: auto; margin-top: 3px;"
+                           {% if pipeline.ip_ended_art46 %}checked{% endif %}>
+                    <span>Исполнительное производство <b>окончено по п.4 ч.1 ст.46</b> ФЗ-229
+                    (пристав не нашёл имущество для взыскания)</span>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: .6rem; cursor: pointer; font-weight: 400; font-size: .9rem;">
+                    <input type="checkbox" name="ip_longer_7_years" value="1" style="width: auto; margin-top: 3px;"
+                           {% if pipeline.ip_longer_7_years %}checked{% endif %}>
+                    <span>Исполнительное производство <b>длится более 7 лет</b></span>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: .6rem; cursor: pointer; font-weight: 400; font-size: .9rem;">
+                    <input type="checkbox" name="is_pensioner" value="1" style="width: auto; margin-top: 3px;"
+                           {% if pipeline.is_pensioner %}checked{% endif %}>
+                    <span>Являюсь <b>пенсионером</b> (основной доход — пенсия)</span>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: .6rem; cursor: pointer; font-weight: 400; font-size: .9rem;">
+                    <input type="checkbox" name="receives_benefits" value="1" style="width: auto; margin-top: 3px;"
+                           {% if pipeline.receives_benefits %}checked{% endif %}>
+                    <span>Получаю <b>пособие</b> (единственный доход — социальное пособие)</span>
+                </label>
+            </div>
+        </div>
+
+        {% if mfc_check %}
+        <div style="background: {% if mfc_check.eligible %}#f0fdf4{% else %}#fef2f2{% endif %}; border: 1px solid {% if mfc_check.eligible %}#bbf7d0{% else %}#fecaca{% endif %}; border-radius: 10px; padding: 1rem; margin-bottom: 1.5rem;">
+            {% if mfc_check.eligible %}
+                <div style="font-weight: 700; color: #166534; margin-bottom: .3rem;">Право на МФЦ подтверждено</div>
+                <div style="font-size: .9rem; color: #14532d;">Основание: {{ mfc_check.basis }}</div>
+            {% else %}
+                <div style="font-weight: 700; color: #991b1b; margin-bottom: .3rem;">МФЦ пока недоступно</div>
+                {% for reason in mfc_check.reasons %}
+                    <div style="font-size: .9rem; color: #7f1d1d;">{{ reason }}</div>
+                {% endfor %}
+                <div style="font-size: .85rem; color: #7f1d1d; margin-top: .5rem;">
+                    Можно продолжить через судебное банкротство или отметить основание выше.
+                </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <div style="background: #f8fafc; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+            <h2 style="margin-bottom: .8rem;">Условия МФЦ</h2>
+            <table style="font-size: .9rem;">
+                <tr><td style="padding: .4rem .8rem; font-weight: 600;">Стоимость</td>
+                    <td style="padding: .4rem .8rem; color: #166534; font-weight: 700;">Бесплатно</td></tr>
+                <tr><td style="padding: .4rem .8rem; font-weight: 600;">Госпошлина</td>
+                    <td style="padding: .4rem .8rem;">Нет</td></tr>
+                <tr><td style="padding: .4rem .8rem; font-weight: 600;">Срок процедуры</td>
+                    <td style="padding: .4rem .8rem;">6 месяцев</td></tr>
+                <tr><td style="padding: .4rem .8rem; font-weight: 600;">Куда подавать</td>
+                    <td style="padding: .4rem .8rem;">МФЦ по месту жительства</td></tr>
+            </table>
+        </div>
+
+        <div style="display: flex; gap: 1rem;">
+            <button type="submit" name="action" value="check_mfc" class="btn btn-secondary">
+                Проверить право на МФЦ
+            </button>
+            <button type="submit" name="action" value="continue" class="btn btn-primary" style="flex: 1; text-align: center;">
+                Продолжить
+            </button>
+        </div>
+        {% if pipeline.route == 'mfc' and (not mfc_check or not mfc_check.eligible) %}
+        <div style="margin-top: .5rem;">
+            <button type="submit" name="action" value="switch_court" class="btn btn-secondary btn-sm" style="font-size: .8rem; color: #64748b;">
+                Переключить на судебное банкротство
+            </button>
+        </div>
+        {% endif %}
+    </form>
+
+    {% else %}
+    <!-- Сумма слишком мала -->
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <div style="font-size: 1.1rem; font-weight: 700; color: #166534; margin-bottom: .5rem;">
+            Банкротство не рекомендуется
+        </div>
+        <p style="color: #14532d; font-size: .9rem; line-height: 1.6;">
+            Сумма долга менее 25 000 руб. Рекомендуется погасить задолженность самостоятельно
+            или обратиться к приставам для рассрочки.
+        </p>
+    </div>
+    <a href="/search" class="btn btn-primary">Вернуться к поиску</a>
+    {% endif %}
+
+</div>
+
+{% endblock %}

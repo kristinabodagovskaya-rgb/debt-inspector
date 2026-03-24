@@ -1,0 +1,243 @@
+{% extends "pipeline/base_pipeline.html" %}
+{% block title %}Заявление — Debt Inspector{% endblock %}
+{% block pipeline_content %}
+
+<div class="card">
+    <h1>Заявление о банкротстве</h1>
+    <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        {% if pipeline.route == 'mfc' %}
+            Заявление о признании гражданина банкротом во внесудебном порядке
+        {% else %}
+            Заявление о признании гражданина банкротом (ст. 213.4 ФЗ-127)
+        {% endif %}
+    </p>
+
+    <!-- Превью заявления -->
+    <div style="background: #fff; border: 2px solid #e2e8f0; border-radius: 10px; padding: 2rem; margin-bottom: 1.5rem; font-family: 'Times New Roman', serif; font-size: 14px; line-height: 1.8;">
+
+        {% if pipeline.route == 'court' %}
+        <!-- Шапка: суд -->
+        <div style="text-align: right; margin-bottom: 2rem;">
+            <div>В {{ pipeline.court_name }}</div>
+            <br>
+            <div><b>Заявитель (должник):</b></div>
+            <div>{{ pipeline.full_name_computed }}</div>
+            <div>{{ pipeline.birth_date }}</div>
+            {% if pipeline.inn %}<div>ИНН: {{ pipeline.inn }}</div>{% endif %}
+            {% if pipeline.snils %}<div>СНИЛС: {{ pipeline.snils }}</div>{% endif %}
+            {% if pipeline.passport_series %}<div>Паспорт: {{ pipeline.passport_series }} {{ pipeline.passport_number }}</div>{% endif %}
+            <div>Адрес: {{ pipeline.region }}, {{ pipeline.city }}, {{ pipeline.address }}</div>
+            {% if pipeline.phone %}<div>Тел.: {{ pipeline.phone }}</div>{% endif %}
+            {% if pipeline.email %}<div>E-mail: {{ pipeline.email }}</div>{% endif %}
+        </div>
+
+        <div style="text-align: center; font-weight: bold; font-size: 16px; margin-bottom: 1.5rem;">
+            ЗАЯВЛЕНИЕ<br>
+            о признании гражданина банкротом
+        </div>
+
+        <p>
+            В соответствии со ст. 213.4 Федерального закона от 26.10.2002 N 127-ФЗ
+            "О несостоятельности (банкротстве)" прошу признать меня,
+            {{ pipeline.full_name_computed }}, банкротом.
+        </p>
+
+        <p>
+            Общая сумма задолженности перед кредиторами составляет
+            <b>{{ pipeline.total_debt|money }}</b> руб.
+            Обязательства не исполнены в течение более трёх месяцев с даты, когда они должны были быть исполнены.
+        </p>
+
+        <p>
+            Удовлетворение требований одного или нескольких кредиторов приводит к невозможности
+            исполнения денежных обязательств в полном объёме перед другими кредиторами.
+        </p>
+
+        {% if pipeline.properties %}
+        <p><b>Имущество:</b></p>
+        <ul>
+            {% for p in pipeline.properties %}
+            {% if p.property_type %}
+            <li>{{ p.description or p.property_type }} — {{ p.estimated_value|money }} руб.
+                {% if p.is_sole_housing %} (единственное жильё){% endif %}</li>
+            {% endif %}
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        <p>
+            {% if pipeline.employment_type == 'employed' %}
+            Место работы: {{ pipeline.employer or 'указано в приложении' }}.
+            Ежемесячный доход: {{ pipeline.monthly_income|money }} руб.
+            {% elif pipeline.employment_type == 'pensioner' %}
+            Являюсь пенсионером. Ежемесячный доход (пенсия): {{ pipeline.monthly_income|money }} руб.
+            {% elif pipeline.employment_type == 'unemployed' %}
+            В настоящее время не работаю.
+            {% else %}
+            Статус занятости: {{ pipeline.employment_type }}.
+            {% endif %}
+            {% if pipeline.dependents_count > 0 %}
+            На иждивении: {{ pipeline.dependents_count }} чел.
+            {% endif %}
+        </p>
+
+        <p><b>Список кредиторов:</b></p>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 1rem;">
+            <thead>
+                <tr style="border-bottom: 1px solid #000;">
+                    <th style="text-align: left; padding: 4px;">N</th>
+                    <th style="text-align: left; padding: 4px;">Кредитор</th>
+                    <th style="text-align: right; padding: 4px;">Сумма, руб.</th>
+                    <th style="text-align: left; padding: 4px;">Основание</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in pipeline.creditors %}
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 4px;">{{ loop.index }}</td>
+                    <td style="padding: 4px;">{{ c.name }}{% if c.creditor_inn %} (ИНН {{ c.creditor_inn }}){% endif %}</td>
+                    <td style="padding: 4px; text-align: right;">{{ c.amount|money }}</td>
+                    <td style="padding: 4px;">{{ c.contract_number or c.debt_type }}</td>
+                </tr>
+                {% endfor %}
+                <tr style="border-top: 2px solid #000; font-weight: bold;">
+                    <td colspan="2" style="padding: 4px; text-align: right;">ИТОГО:</td>
+                    <td style="padding: 4px; text-align: right;">{{ pipeline.total_debt|money }}</td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p style="margin-top: 1.5rem;"><b>На основании изложенного, руководствуясь ст. 213.4 ФЗ-127,</b></p>
+        <p style="text-align: center; font-weight: bold;">ПРОШУ:</p>
+        <ol>
+            <li>Признать меня, {{ pipeline.full_name_computed }}, несостоятельным (банкротом).</li>
+            <li>Утвердить финансового управляющего из числа членов саморегулируемой организации арбитражных управляющих.</li>
+        </ol>
+
+        <p style="margin-top: 1.5rem;"><b>Приложения:</b></p>
+        <ol style="font-size: 13px;">
+            <li>Копия паспорта</li>
+            <li>Копия ИНН</li>
+            <li>Копия СНИЛС</li>
+            <li>Список кредиторов и должников</li>
+            <li>Опись имущества</li>
+            <li>Справки о доходах за 3 года</li>
+            <li>Выписка из ЕГРН</li>
+            <li>Справка ГИБДД</li>
+            <li>Выписки из банков</li>
+            <li>Копии кредитных договоров</li>
+            <li>Квитанция об уплате госпошлины (300 руб.)</li>
+            <li>Квитанция о внесении депозита (25 000 руб.)</li>
+        </ol>
+
+        <div style="margin-top: 2rem;">
+            <div>Дата: «____» _____________ 20___ г.</div>
+            <div style="margin-top: 1rem;">Подпись: _________________ / {{ pipeline.full_name_computed }} /</div>
+        </div>
+
+        {% else %}
+        <!-- МФЦ заявление -->
+        <div style="text-align: right; margin-bottom: 2rem;">
+            <div>В МФЦ по месту жительства</div>
+            <br>
+            <div><b>Заявитель:</b></div>
+            <div>{{ pipeline.full_name_computed }}</div>
+            {% if pipeline.birth_date %}<div>Дата рождения: {{ pipeline.birth_date }}</div>{% endif %}
+            {% if pipeline.inn %}<div>ИНН: {{ pipeline.inn }}</div>{% endif %}
+            {% if pipeline.snils %}<div>СНИЛС: {{ pipeline.snils }}</div>{% endif %}
+            {% if pipeline.passport_series %}<div>Паспорт: {{ pipeline.passport_series }} {{ pipeline.passport_number }}</div>{% endif %}
+            <div>Адрес: {{ pipeline.region }}, {{ pipeline.city }}, {{ pipeline.address }}</div>
+            {% if pipeline.phone %}<div>Тел.: {{ pipeline.phone }}</div>{% endif %}
+        </div>
+
+        <div style="text-align: center; font-weight: bold; font-size: 16px; margin-bottom: 1.5rem;">
+            ЗАЯВЛЕНИЕ<br>
+            о признании гражданина банкротом во внесудебном порядке
+        </div>
+
+        <p>
+            В соответствии со ст. 223.2 Федерального закона от 26.10.2002 N 127-ФЗ
+            "О несостоятельности (банкротстве)" прошу признать меня,
+            {{ pipeline.full_name_computed }}, банкротом во внесудебном порядке.
+        </p>
+
+        <p>
+            Общая сумма обязательств составляет <b>{{ pipeline.total_debt|money }}</b> руб.
+        </p>
+
+        <p><b>Список кредиторов:</b></p>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 1rem;">
+            <thead>
+                <tr style="border-bottom: 1px solid #000;">
+                    <th style="text-align: left; padding: 4px;">N</th>
+                    <th style="text-align: left; padding: 4px;">Кредитор</th>
+                    <th style="text-align: right; padding: 4px;">Сумма, руб.</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in pipeline.creditors %}
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 4px;">{{ loop.index }}</td>
+                    <td style="padding: 4px;">{{ c.name }}</td>
+                    <td style="padding: 4px; text-align: right;">{{ c.amount|money }}</td>
+                </tr>
+                {% endfor %}
+                <tr style="border-top: 2px solid #000; font-weight: bold;">
+                    <td colspan="2" style="padding: 4px; text-align: right;">ИТОГО:</td>
+                    <td style="padding: 4px; text-align: right;">{{ pipeline.total_debt|money }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div style="margin-top: 2rem;">
+            <div>Дата: «____» _____________ 20___ г.</div>
+            <div style="margin-top: 1rem;">Подпись: _________________ / {{ pipeline.full_name_computed }} /</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Кнопки скачивания -->
+    <div style="display: flex; flex-wrap: wrap; gap: .8rem; margin-bottom: 1.5rem;">
+        <a href="/pipeline/{{ pid }}/download?doc=application" class="btn btn-primary" style="flex: 1; text-align: center;">
+            Скачать заявление (DOCX)
+        </a>
+        <a href="/pipeline/{{ pid }}/download?doc=creditors" class="btn btn-secondary" style="flex: 1; text-align: center;">
+            Список кредиторов (DOCX)
+        </a>
+        {% if pipeline.route == 'court' %}
+        <a href="/pipeline/{{ pid }}/download?doc=inventory" class="btn btn-secondary" style="flex: 1; text-align: center;">
+            Опись имущества (DOCX)
+        </a>
+        {% endif %}
+    </div>
+
+    {% if show_petition %}
+    <div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <h2 style="color: #854d0e; margin-bottom: .5rem; font-size: 1rem;">Ходатайство об ускорении</h2>
+        <p style="font-size: .85rem; color: #713f12; margin-bottom: 1rem; line-height: 1.5;">
+            Инспектор подготовил ходатайство о введении процедуры реализации имущества,
+            минуя реструктуризацию долгов (ст. 213.6 п.8 ФЗ-127). Подайте его вместе с заявлением —
+            это сократит процедуру на 3-6 месяцев.
+        </p>
+        <a href="/pipeline/{{ pid }}/download?doc=petition" class="btn btn-primary" style="text-align: center;">
+            Скачать ходатайство (DOCX)
+        </a>
+    </div>
+    {% endif %}
+
+    <div style="display: flex; gap: 1rem;">
+        <a href="/pipeline/{{ pid }}/documents" class="btn btn-secondary">Назад</a>
+        {% if pipeline.route == 'court' %}
+        <a href="/pipeline/{{ pid }}/payment" class="btn btn-primary" style="flex: 1; text-align: center;">
+            Далее — Оплата
+        </a>
+        {% else %}
+        <a href="/pipeline/{{ pid }}/filing" class="btn btn-primary" style="flex: 1; text-align: center;">
+            Далее — Подача заявления
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

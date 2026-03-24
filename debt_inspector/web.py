@@ -25,11 +25,26 @@ from debt_inspector.models.bankruptcy_case_info import (
     IncomeInfo,
     determine_route,
     determine_court,
+    check_mfc_eligibility,
+    get_sro_for_region,
+    get_court_details,
     ARBITRATION_COURTS,
+    SRO_LIST,
 )
+from debt_inspector.models.pipeline import (
+    BankruptcyPipeline,
+    CreditorInfo,
+    PipelineStep,
+    PIPELINE_STEPS,
+    get_documents_for_route,
+    DocumentStatus,
+)
+from debt_inspector.models.bankruptcy_case_info import recommend_acceleration
+from debt_inspector.processing.qr_payment import generate_fee_qr, generate_deposit_qr
 from debt_inspector.inspector import inspect, inspect_fssp_with_captcha
 from debt_inspector.sources.fssp import CaptchaRequired
 from debt_inspector.processing.reporter import export_json, export_excel
+from debt_inspector.storage.cache import ResultCache
 
 app = FastAPI(title="Debt Inspector")
 app.add_middleware(
@@ -536,6 +551,532 @@ async def download_report(request: Request, report_id: str, format: str = "json"
         media_type = "application/json"
 
     return FileResponse(path, media_type=media_type, filename=path.name)
+
+
+# --- Pipeline банкротства ---
+
+
+def _get_pipeline_cache():
+    """Возвращает экземпляр ResultCache для pipeline."""
+    return ResultCache()
+
+
+def _load_pipeline(pid: str) -> BankruptcyPipeline | None:
+    """Загружает pipeline из БД."""
+    try:
+        cache = _get_pipeline_cache()
+        data = cache.get_pipeline(pid)
+        cache.close()
+        if data:
+            return BankruptcyPipeline(**data["data"])
+    except Exception:
+        pass
+    return None
+
+
+def _save_pipeline_data(pid: str, pipeline: BankruptcyPipeline):
+    """Сохраняет pipeline в БД."""
+    try:
+        cache = _get_pipeline_cache()
+        cache.save_pipeline(pid, pipeline.current_step.value, pipeline.model_dump(mode="json"))
+        cache.close()
+    except Exception:
+        pass
+
+
+def _pipeline_context(pipeline: BankruptcyPipeline, pid: str, step_num: int) -> dict:
+    """Базовый контекст для шаблонов pipeline."""
+    return {
+        "pipeline": pipeline,
+        "pid": pid,
+        "steps": PIPELINE_STEPS,
+        "current_step_num": step_num,
+    }
+
+
+@app.get("/pipeline/start", response_class=HTMLResponse)
+async def pipeline_start(request: Request, report_id: str = ""):
+    """Начало pipeline — создаёт pipeline из report и редиректит на assessment."""
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pid = uuid.uuid4().hex[:12]
+    pipeline = BankruptcyPipeline(report_id=report_id, current_step=PipelineStep.ASSESSMENT)
+
+    # Заполняем из отчёта
+    entry = _reports.get(report_id)
+    if entry:
+        _, report = entry
+        sp = report.search_params
+
+        # ФИО
+        pipeline.last_name = sp.last_name or ""
+        pipeline.first_name = sp.first_name or ""
+        pipeline.middle_name = sp.middle_name or ""
+        pipeline.inn = sp.inn or ""
+        pipeline.birth_date = sp.birth_date or ""
+
+        # Регион
+        if sp.region:
+            pipeline.region_code = sp.region
+            pipeline.region = REGIONS.get(sp.region, "")
+
+        # Долги — из ФССП enforcements
+        total = 0.0
+        creditors_seen = {}
+        for e in report.enforcements:
+            claimant = e.claimant or "Неизвестный кредитор"
+            amount = e.amount or 0
+            total += amount
+            if claimant in creditors_seen:
+                creditors_seen[claimant]["amount"] += amount
+            else:
+                creditors_seen[claimant] = {
+                    "name": claimant,
+                    "amount": amount,
+                    "debt_type": "tax" if (e.subject and "ФНС" in e.subject) else "credit",
+                    "contract_number": e.number or "",
+                    "source": "fssp",
+                }
+
+        pipeline.creditors = [CreditorInfo(**c) for c in creditors_seen.values()]
+        pipeline.total_debt = total
+
+        # Маршрут
+        route = determine_route(total)
+        pipeline.route = route.value
+        if pipeline.region:
+            pipeline.court_name = determine_court(pipeline.region)
+        else:
+            pipeline.court_name = "Арбитражный суд по месту жительства"
+
+    _save_pipeline_data(pid, pipeline)
+    return RedirectResponse(f"/pipeline/{pid}/assessment", status_code=302)
+
+
+@app.get("/pipeline/{pid}/assessment", response_class=HTMLResponse)
+async def pipeline_assessment_page(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    # Рекомендации по ускорению
+    accel_tips = recommend_acceleration(
+        total_debt=pipeline.total_debt,
+        monthly_income=pipeline.monthly_income,
+        dependents_count=pipeline.dependents_count,
+        is_pensioner=pipeline.is_pensioner,
+        receives_benefits=pipeline.receives_benefits,
+        ip_ended_art46=pipeline.ip_ended_art46,
+        ip_longer_7_years=pipeline.ip_longer_7_years,
+        route=pipeline.route,
+    )
+
+    ctx = _pipeline_context(pipeline, pid, 2)
+    ctx["request"] = request
+    ctx["user"] = user
+    ctx["mfc_check"] = None
+    ctx["accel_tips"] = accel_tips
+    return templates.TemplateResponse("pipeline/assessment.html", ctx)
+
+
+@app.post("/pipeline/{pid}/assessment", response_class=HTMLResponse)
+async def pipeline_assessment_submit(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    form = await request.form()
+    action = form.get("action", "continue")
+
+    # Обновляем данные МФЦ
+    pipeline.ip_ended_art46 = bool(form.get("ip_ended_art46"))
+    pipeline.ip_longer_7_years = bool(form.get("ip_longer_7_years"))
+    pipeline.is_pensioner = bool(form.get("is_pensioner"))
+    pipeline.receives_benefits = bool(form.get("receives_benefits"))
+    pipeline.skip_restructuring = bool(form.get("skip_restructuring"))
+
+    if action == "switch_court":
+        pipeline.route = "court"
+        if pipeline.region:
+            pipeline.court_name = determine_court(pipeline.region)
+        _save_pipeline_data(pid, pipeline)
+        return RedirectResponse(f"/pipeline/{pid}/assessment", status_code=302)
+
+    if action == "check_mfc":
+        mfc_check = check_mfc_eligibility(
+            pipeline.total_debt,
+            pipeline.ip_ended_art46,
+            pipeline.ip_longer_7_years,
+            pipeline.is_pensioner,
+            pipeline.receives_benefits,
+        )
+        _save_pipeline_data(pid, pipeline)
+        ctx = _pipeline_context(pipeline, pid, 2)
+        ctx["request"] = request
+        ctx["user"] = user
+        ctx["mfc_check"] = mfc_check
+        return templates.TemplateResponse("pipeline/assessment.html", ctx)
+
+    # continue — переход к profile
+    pipeline.current_step = PipelineStep.PROFILE
+    _save_pipeline_data(pid, pipeline)
+    return RedirectResponse(f"/pipeline/{pid}/profile", status_code=302)
+
+
+@app.get("/pipeline/{pid}/profile", response_class=HTMLResponse)
+async def pipeline_profile_page(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    ctx = _pipeline_context(pipeline, pid, 3)
+    ctx["request"] = request
+    ctx["user"] = user
+    ctx["regions"] = sorted(ARBITRATION_COURTS.keys())
+    return templates.TemplateResponse("pipeline/profile.html", ctx)
+
+
+@app.post("/pipeline/{pid}/profile", response_class=HTMLResponse)
+async def pipeline_profile_submit(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    form = await request.form()
+
+    # Личные данные
+    pipeline.last_name = form.get("last_name", "")
+    pipeline.first_name = form.get("first_name", "")
+    pipeline.middle_name = form.get("middle_name", "")
+    pipeline.birth_date = form.get("birth_date", "")
+    pipeline.inn = form.get("inn", "")
+    pipeline.snils = form.get("snils", "")
+
+    # Паспорт
+    pipeline.passport_series = form.get("passport_series", "")
+    pipeline.passport_number = form.get("passport_number", "")
+    pipeline.passport_issued_by = form.get("passport_issued_by", "")
+    pipeline.passport_issued_date = form.get("passport_issued_date", "")
+    pipeline.passport_code = form.get("passport_code", "")
+
+    # Адрес
+    pipeline.region = form.get("region", "")
+    pipeline.city = form.get("city", "")
+    pipeline.address = form.get("address", "")
+    pipeline.phone = form.get("phone", "")
+    pipeline.email = form.get("email", "")
+
+    # Обновляем суд по новому региону
+    if pipeline.region:
+        pipeline.court_name = determine_court(pipeline.region)
+
+    # Кредиторы
+    creditors = []
+    for i in range(50):
+        name = form.get(f"cred_name_{i}", "")
+        if not name:
+            continue
+        creditors.append(CreditorInfo(
+            name=name,
+            amount=float(form.get(f"cred_amount_{i}", 0) or 0),
+            debt_type=form.get(f"cred_type_{i}", "credit"),
+            contract_number=form.get(f"cred_contract_{i}", ""),
+            creditor_inn=form.get(f"cred_inn_{i}", ""),
+        ))
+    pipeline.creditors = creditors
+
+    # Пересчитываем total_debt
+    pipeline.total_debt = sum(c.amount for c in creditors)
+
+    # Имущество
+    properties = []
+    for i in range(30):
+        ptype = form.get(f"prop_type_{i}", "")
+        if not ptype:
+            continue
+        properties.append({
+            "property_type": ptype,
+            "description": form.get(f"prop_desc_{i}", ""),
+            "estimated_value": float(form.get(f"prop_value_{i}", 0) or 0),
+            "is_sole_housing": bool(form.get(f"prop_sole_{i}", "")),
+        })
+    pipeline.properties = properties
+
+    # Доходы
+    pipeline.employment_type = form.get("employment_type", "")
+    pipeline.monthly_income = float(form.get("monthly_income", 0) or 0)
+    pipeline.employer = form.get("employer", "")
+    pipeline.dependents_count = int(form.get("dependents_count", 0) or 0)
+
+    # Семья
+    pipeline.marital_status = form.get("marital_status", "single")
+    pipeline.children_count = int(form.get("children_count", 0) or 0)
+
+    pipeline.current_step = PipelineStep.CREDITORS
+    _save_pipeline_data(pid, pipeline)
+    return RedirectResponse(f"/pipeline/{pid}/creditors", status_code=302)
+
+
+# --- Шаг 4: Кредиторы ---
+
+
+@app.get("/pipeline/{pid}/creditors", response_class=HTMLResponse)
+async def pipeline_creditors_page(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    ctx = _pipeline_context(pipeline, pid, 4)
+    ctx["request"] = request
+    ctx["user"] = user
+    return templates.TemplateResponse("pipeline/creditors.html", ctx)
+
+
+@app.post("/pipeline/{pid}/creditors", response_class=HTMLResponse)
+async def pipeline_creditors_submit(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    form = await request.form()
+
+    creditors = []
+    for i in range(50):
+        name = form.get(f"cred_name_{i}", "")
+        if not name:
+            continue
+        creditors.append(CreditorInfo(
+            name=name,
+            amount=float(form.get(f"cred_amount_{i}", 0) or 0),
+            debt_type=form.get(f"cred_type_{i}", "credit"),
+            contract_number=form.get(f"cred_contract_{i}", ""),
+            creditor_inn=form.get(f"cred_inn_{i}", ""),
+        ))
+    pipeline.creditors = creditors
+    pipeline.total_debt = sum(c.amount for c in creditors)
+
+    # Обновляем маршрут по новой сумме
+    route = determine_route(pipeline.total_debt)
+    pipeline.route = route.value
+    if pipeline.region:
+        pipeline.court_name = determine_court(pipeline.region)
+
+    pipeline.current_step = PipelineStep.DOCUMENTS
+    _save_pipeline_data(pid, pipeline)
+    return RedirectResponse(f"/pipeline/{pid}/documents", status_code=302)
+
+
+@app.get("/pipeline/{pid}/documents", response_class=HTMLResponse)
+async def pipeline_documents_page(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    documents = get_documents_for_route(pipeline.route, pipeline.marital_status, pipeline.children_count)
+    doc_statuses = {ds.doc_name: ds.is_ready for ds in pipeline.document_statuses}
+
+    ctx = _pipeline_context(pipeline, pid, 5)
+    ctx["request"] = request
+    ctx["user"] = user
+    ctx["documents"] = documents
+    ctx["doc_statuses"] = doc_statuses
+    return templates.TemplateResponse("pipeline/documents.html", ctx)
+
+
+@app.post("/pipeline/{pid}/documents", response_class=HTMLResponse)
+async def pipeline_documents_submit(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    form = await request.form()
+
+    # Собираем статусы документов
+    statuses = []
+    for i in range(30):
+        doc_name = form.get(f"doc_{i}", "")
+        if doc_name:
+            statuses.append(DocumentStatus(doc_name=doc_name, is_ready=True))
+    pipeline.document_statuses = statuses
+
+    pipeline.current_step = PipelineStep.APPLICATION
+    _save_pipeline_data(pid, pipeline)
+    return RedirectResponse(f"/pipeline/{pid}/application", status_code=302)
+
+
+@app.get("/pipeline/{pid}/application", response_class=HTMLResponse)
+async def pipeline_application_page(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    ctx = _pipeline_context(pipeline, pid, 6)
+    ctx["request"] = request
+    ctx["user"] = user
+    ctx["show_petition"] = pipeline.skip_restructuring and pipeline.route == "court"
+    return templates.TemplateResponse("pipeline/application.html", ctx)
+
+
+@app.get("/pipeline/{pid}/download")
+async def pipeline_download(request: Request, pid: str, doc: str = "application"):
+    """Скачивание DOCX документов pipeline."""
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    from debt_inspector.processing.application_generator import (
+        generate_court_application,
+        generate_mfc_application,
+        generate_creditors_list,
+        generate_inventory,
+        generate_skip_restructuring_petition,
+    )
+
+    tmp_dir = Path(tempfile.mkdtemp())
+    data = pipeline.model_dump(mode="json")
+    name_part = pipeline.last_name or "debtor"
+
+    if doc == "application":
+        if pipeline.route == "mfc":
+            path = generate_mfc_application(data, tmp_dir / f"zayavlenie_mfc_{name_part}.docx")
+        else:
+            path = generate_court_application(data, tmp_dir / f"zayavlenie_sud_{name_part}.docx")
+    elif doc == "creditors":
+        path = generate_creditors_list(data, tmp_dir / f"spisok_kreditorov_{name_part}.docx")
+    elif doc == "inventory":
+        path = generate_inventory(data, tmp_dir / f"opis_imuschestva_{name_part}.docx")
+    elif doc == "petition":
+        path = generate_skip_restructuring_petition(data, tmp_dir / f"hodatajstvo_{name_part}.docx")
+    else:
+        return HTMLResponse("<h3>Неизвестный тип документа</h3>", status_code=400)
+
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=path.name,
+    )
+
+
+# --- Шаг 7: Оплата ---
+
+
+@app.get("/pipeline/{pid}/payment", response_class=HTMLResponse)
+async def pipeline_payment_page(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    pipeline.current_step = PipelineStep.PAYMENT
+    _save_pipeline_data(pid, pipeline)
+
+    court_details = get_court_details(pipeline.court_name) if pipeline.court_name else None
+    payer_name = pipeline.full_name_computed
+    payer_inn = pipeline.inn
+
+    fee_qr = generate_fee_qr(court_details, payer_name, payer_inn) if court_details else None
+    deposit_qr = generate_deposit_qr(court_details, payer_name, payer_inn) if court_details else None
+
+    ctx = _pipeline_context(pipeline, pid, 7)
+    ctx["request"] = request
+    ctx["user"] = user
+    ctx["court_details"] = court_details
+    ctx["fee_qr"] = fee_qr
+    ctx["deposit_qr"] = deposit_qr
+    ctx["is_mfc"] = pipeline.route == "mfc"
+    return templates.TemplateResponse("pipeline/payment.html", ctx)
+
+
+@app.get("/pipeline/{pid}/filing", response_class=HTMLResponse)
+async def pipeline_filing_page(request: Request, pid: str):
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    pipeline.current_step = PipelineStep.FILING
+    _save_pipeline_data(pid, pipeline)
+
+    # СРО для региона
+    sro_list = get_sro_for_region(pipeline.region) if pipeline.region else SRO_LIST
+    # Реквизиты суда
+    court_details = get_court_details(pipeline.court_name) if pipeline.court_name else None
+
+    ctx = _pipeline_context(pipeline, pid, 8)
+    ctx["request"] = request
+    ctx["user"] = user
+    ctx["sro_list"] = sro_list
+    ctx["court_details"] = court_details
+    ctx["is_mfc"] = pipeline.route == "mfc"
+    return templates.TemplateResponse("pipeline/filing.html", ctx)
+
+
+@app.post("/pipeline/{pid}/filing", response_class=HTMLResponse)
+async def pipeline_filing_submit(request: Request, pid: str):
+    """Сохранение выбранного СРО."""
+    user = _get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    pipeline = _load_pipeline(pid)
+    if not pipeline:
+        return HTMLResponse("<h3>Pipeline не найден</h3>", status_code=404)
+
+    form = await request.form()
+    pipeline.selected_sro = form.get("selected_sro", "")
+    pipeline.selected_sro_address = form.get("selected_sro_address", "")
+    pipeline.selected_sro_inn = form.get("selected_sro_inn", "")
+    _save_pipeline_data(pid, pipeline)
+
+    return RedirectResponse(f"/pipeline/{pid}/filing", status_code=302)
 
 
 def _start_proxy():

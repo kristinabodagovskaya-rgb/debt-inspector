@@ -1,0 +1,432 @@
+{% extends "pipeline/base_pipeline.html" %}
+{% block title %}Анкета должника — Debt Inspector{% endblock %}
+{% block pipeline_content %}
+
+<div class="card">
+    <h1>Анкета должника</h1>
+    <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        Данные предзаполнены из результатов поиска. Проверьте и дополните.
+    </p>
+
+    <form method="POST" action="/pipeline/{{ pid }}/profile" id="profileForm">
+
+        <!-- 1. Личные данные -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem;">1. Личные данные</h2>
+        <div class="form-row-3">
+            <div class="form-group">
+                <label for="last_name">Фамилия *</label>
+                <input type="text" id="last_name" name="last_name" value="{{ pipeline.last_name }}" required>
+            </div>
+            <div class="form-group">
+                <label for="first_name">Имя *</label>
+                <input type="text" id="first_name" name="first_name" value="{{ pipeline.first_name }}" required>
+            </div>
+            <div class="form-group">
+                <label for="middle_name">Отчество</label>
+                <input type="text" id="middle_name" name="middle_name" value="{{ pipeline.middle_name }}">
+            </div>
+        </div>
+        <div class="form-row-3">
+            <div class="form-group">
+                <label for="birth_date">Дата рождения</label>
+                <input type="date" id="birth_date" name="birth_date" value="{{ pipeline.birth_date }}">
+            </div>
+            <div class="form-group">
+                <label for="inn">ИНН</label>
+                <input type="text" id="inn" name="inn" maxlength="12" placeholder="12 цифр" value="{{ pipeline.inn }}">
+            </div>
+            <div class="form-group">
+                <label for="snils">СНИЛС</label>
+                <input type="text" id="snils" name="snils" placeholder="XXX-XXX-XXX XX" value="{{ pipeline.snils }}">
+            </div>
+        </div>
+
+        <!-- 2. Паспорт -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">2. Паспортные данные</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="passport_series">Серия</label>
+                <input type="text" id="passport_series" name="passport_series" maxlength="4" placeholder="0000"
+                       value="{{ pipeline.passport_series }}">
+            </div>
+            <div class="form-group">
+                <label for="passport_number">Номер</label>
+                <input type="text" id="passport_number" name="passport_number" maxlength="6" placeholder="000000"
+                       value="{{ pipeline.passport_number }}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="passport_issued_by">Кем выдан</label>
+            <input type="text" id="passport_issued_by" name="passport_issued_by"
+                   placeholder="Отделом УФМС России по г. Москве..." value="{{ pipeline.passport_issued_by }}">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="passport_issued_date">Дата выдачи</label>
+                <input type="date" id="passport_issued_date" name="passport_issued_date"
+                       value="{{ pipeline.passport_issued_date }}">
+            </div>
+            <div class="form-group">
+                <label for="passport_code">Код подразделения</label>
+                <input type="text" id="passport_code" name="passport_code" maxlength="7" placeholder="000-000"
+                       value="{{ pipeline.passport_code }}">
+            </div>
+        </div>
+
+        <!-- 3. Адрес -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">3. Адрес регистрации</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="region">Регион *</label>
+                <select id="region" name="region" required>
+                    <option value="">Выберите регион</option>
+                    {% for r in regions %}
+                        <option value="{{ r }}" {% if r == pipeline.region %}selected{% endif %}>{{ r }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="city">Город</label>
+                <input type="text" id="city" name="city" value="{{ pipeline.city }}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="address">Полный адрес *</label>
+            <input type="text" id="address" name="address" required placeholder="ул. Примерная, д. 1, кв. 1"
+                   value="{{ pipeline.address }}">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="phone">Телефон</label>
+                <input type="tel" id="phone" name="phone" placeholder="+7 (999) 123-45-67" value="{{ pipeline.phone }}">
+            </div>
+            <div class="form-group">
+                <label for="email">E-mail</label>
+                <input type="email" id="email" name="email" value="{{ pipeline.email }}">
+            </div>
+        </div>
+
+        <!-- 4. Кредиторы -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">4. Кредиторы</h2>
+        {% if pipeline.creditors %}
+        <div class="alert alert-success" style="margin-bottom: 1rem;">
+            Найдено {{ pipeline.creditors|length }} кредиторов из результатов поиска. Проверьте данные и добавьте недостающих.
+        </div>
+        {% endif %}
+
+        <div id="creditors">
+            {% for c in pipeline.creditors %}
+            <div class="creditor-item" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem; position: relative;">
+                {% if not loop.first %}
+                <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:.5rem;right:.8rem;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.2rem;">&times;</button>
+                {% endif %}
+                <div class="form-row-3" style="align-items: end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Кредитор *</label>
+                        <input type="text" name="cred_name_{{ loop.index0 }}" value="{{ c.name }}" placeholder="Сбербанк, МФО, ФНС...">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Сумма (руб.) *</label>
+                        <input type="number" name="cred_amount_{{ loop.index0 }}" value="{{ c.amount }}" min="0" step="0.01">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Тип</label>
+                        <select name="cred_type_{{ loop.index0 }}">
+                            <option value="credit" {% if c.debt_type == 'credit' %}selected{% endif %}>Кредит</option>
+                            <option value="microloan" {% if c.debt_type == 'microloan' %}selected{% endif %}>Микрозайм</option>
+                            <option value="mortgage" {% if c.debt_type == 'mortgage' %}selected{% endif %}>Ипотека</option>
+                            <option value="tax" {% if c.debt_type == 'tax' %}selected{% endif %}>Налоги</option>
+                            <option value="utility" {% if c.debt_type == 'utility' %}selected{% endif %}>ЖКХ</option>
+                            <option value="alimony" {% if c.debt_type == 'alimony' %}selected{% endif %}>Алименты</option>
+                            <option value="fine" {% if c.debt_type == 'fine' %}selected{% endif %}>Штрафы</option>
+                            <option value="other" {% if c.debt_type == 'other' %}selected{% endif %}>Другое</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row" style="margin-top: .8rem; align-items: end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Номер договора / ИП</label>
+                        <input type="text" name="cred_contract_{{ loop.index0 }}" value="{{ c.contract_number }}" placeholder="12345/21/77001-ИП">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>ИНН кредитора</label>
+                        <input type="text" name="cred_inn_{{ loop.index0 }}" value="{{ c.creditor_inn }}" maxlength="12">
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if not pipeline.creditors %}
+            <div class="creditor-item" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem;">
+                <div class="form-row-3" style="align-items: end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Кредитор *</label>
+                        <input type="text" name="cred_name_0" placeholder="Сбербанк, МФО, ФНС...">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Сумма (руб.) *</label>
+                        <input type="number" name="cred_amount_0" min="0" step="0.01">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Тип</label>
+                        <select name="cred_type_0">
+                            <option value="credit">Кредит</option>
+                            <option value="microloan">Микрозайм</option>
+                            <option value="mortgage">Ипотека</option>
+                            <option value="tax">Налоги</option>
+                            <option value="utility">ЖКХ</option>
+                            <option value="alimony">Алименты</option>
+                            <option value="fine">Штрафы</option>
+                            <option value="other">Другое</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row" style="margin-top: .8rem; align-items: end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Номер договора / ИП</label>
+                        <input type="text" name="cred_contract_0" placeholder="12345/21/77001-ИП">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>ИНН кредитора</label>
+                        <input type="text" name="cred_inn_0" maxlength="12">
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="addCreditor()" style="margin-bottom: .5rem;">
+            + Добавить кредитора
+        </button>
+
+        <!-- 5. Имущество -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">5. Имущество</h2>
+        <p style="color: #64748b; font-size: .85rem; margin-bottom: 1rem;">
+            Укажите всё имущество. Единственное жильё защищено от реализации (ст. 446 ГПК РФ).
+        </p>
+        <div id="properties">
+            {% for p in pipeline.properties %}
+            <div class="property-item" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem; position: relative;">
+                {% if not loop.first %}
+                <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:.5rem;right:.8rem;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.2rem;">&times;</button>
+                {% endif %}
+                <div class="form-row" style="align-items:end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Тип</label>
+                        <select name="prop_type_{{ loop.index0 }}">
+                            <option value="">Нет имущества</option>
+                            <option value="apartment" {% if p.property_type == 'apartment' %}selected{% endif %}>Квартира</option>
+                            <option value="house" {% if p.property_type == 'house' %}selected{% endif %}>Дом</option>
+                            <option value="car" {% if p.property_type == 'car' %}selected{% endif %}>Автомобиль</option>
+                            <option value="land" {% if p.property_type == 'land' %}selected{% endif %}>Земельный участок</option>
+                            <option value="deposit" {% if p.property_type == 'deposit' %}selected{% endif %}>Вклад / Счёт</option>
+                            <option value="other" {% if p.property_type == 'other' %}selected{% endif %}>Другое</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Описание</label>
+                        <input type="text" name="prop_desc_{{ loop.index0 }}" value="{{ p.description }}">
+                    </div>
+                </div>
+                <div class="form-row" style="margin-top: .8rem; align-items:end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Стоимость (руб.)</label>
+                        <input type="number" name="prop_value_{{ loop.index0 }}" min="0" step="0.01" value="{{ p.estimated_value }}">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                            <input type="checkbox" name="prop_sole_{{ loop.index0 }}" value="1" style="width:auto;"
+                                   {% if p.is_sole_housing %}checked{% endif %}>
+                            Единственное жильё
+                        </label>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if not pipeline.properties %}
+            <div class="property-item" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem;">
+                <div class="form-row" style="align-items:end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Тип</label>
+                        <select name="prop_type_0">
+                            <option value="">Нет имущества</option>
+                            <option value="apartment">Квартира</option>
+                            <option value="house">Дом</option>
+                            <option value="car">Автомобиль</option>
+                            <option value="land">Земельный участок</option>
+                            <option value="deposit">Вклад / Счёт</option>
+                            <option value="other">Другое</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Описание</label>
+                        <input type="text" name="prop_desc_0" placeholder="Например: 1-к квартира 40 м2">
+                    </div>
+                </div>
+                <div class="form-row" style="margin-top: .8rem; align-items:end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Стоимость (руб.)</label>
+                        <input type="number" name="prop_value_0" min="0" step="0.01" placeholder="0">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                            <input type="checkbox" name="prop_sole_0" value="1" style="width:auto;">
+                            Единственное жильё
+                        </label>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="addProperty()" style="margin-bottom: 1rem;">
+            + Добавить имущество
+        </button>
+
+        <!-- 6. Доходы -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">6. Доходы и занятость</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="employment_type">Статус занятости</label>
+                <select id="employment_type" name="employment_type">
+                    <option value="employed" {% if pipeline.employment_type == 'employed' %}selected{% endif %}>Работаю</option>
+                    <option value="unemployed" {% if pipeline.employment_type == 'unemployed' %}selected{% endif %}>Не работаю</option>
+                    <option value="pensioner" {% if pipeline.employment_type == 'pensioner' %}selected{% endif %}>Пенсионер</option>
+                    <option value="self_employed" {% if pipeline.employment_type == 'self_employed' %}selected{% endif %}>ИП / Самозанятый</option>
+                    <option value="disabled" {% if pipeline.employment_type == 'disabled' %}selected{% endif %}>Инвалид</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="monthly_income">Ежемесячный доход (руб.)</label>
+                <input type="number" id="monthly_income" name="monthly_income" min="0" step="0.01"
+                       value="{{ pipeline.monthly_income or '' }}">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="employer">Место работы</label>
+                <input type="text" id="employer" name="employer" value="{{ pipeline.employer }}">
+            </div>
+            <div class="form-group">
+                <label for="dependents_count">Количество иждивенцев</label>
+                <input type="number" id="dependents_count" name="dependents_count" min="0"
+                       value="{{ pipeline.dependents_count }}">
+            </div>
+        </div>
+
+        <!-- 7. Семья -->
+        <h2 style="border-bottom: 2px solid #e2e8f0; padding-bottom: .5rem; margin-top: 2rem;">7. Семейное положение</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="marital_status">Семейное положение</label>
+                <select id="marital_status" name="marital_status">
+                    <option value="single" {% if pipeline.marital_status == 'single' %}selected{% endif %}>Не женат / не замужем</option>
+                    <option value="married" {% if pipeline.marital_status == 'married' %}selected{% endif %}>В браке</option>
+                    <option value="divorced" {% if pipeline.marital_status == 'divorced' %}selected{% endif %}>Разведён(а)</option>
+                    <option value="widowed" {% if pipeline.marital_status == 'widowed' %}selected{% endif %}>Вдовец / вдова</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="children_count">Несовершеннолетние дети</label>
+                <input type="number" id="children_count" name="children_count" min="0"
+                       value="{{ pipeline.children_count }}">
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+            <a href="/pipeline/{{ pid }}/assessment" class="btn btn-secondary">Назад</a>
+            <button type="submit" class="btn btn-primary" style="flex: 1; text-align: center;">
+                Далее — Чек-лист документов
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+let credCount = {{ pipeline.creditors|length or 1 }};
+let propCount = {{ pipeline.properties|length or 1 }};
+
+function addCreditor() {
+    const i = credCount++;
+    const div = document.createElement('div');
+    div.className = 'creditor-item';
+    div.style = 'background:#f8fafc; border-radius:10px; padding:1rem; margin-bottom:.8rem; position:relative;';
+    div.innerHTML = `
+        <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:.5rem;right:.8rem;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.2rem;">&times;</button>
+        <div class="form-row-3" style="align-items:end;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Кредитор *</label>
+                <input type="text" name="cred_name_${i}" placeholder="Сбербанк, МФО, ФНС...">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Сумма (руб.) *</label>
+                <input type="number" name="cred_amount_${i}" min="0" step="0.01">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Тип</label>
+                <select name="cred_type_${i}">
+                    <option value="credit">Кредит</option>
+                    <option value="microloan">Микрозайм</option>
+                    <option value="mortgage">Ипотека</option>
+                    <option value="tax">Налоги</option>
+                    <option value="utility">ЖКХ</option>
+                    <option value="alimony">Алименты</option>
+                    <option value="fine">Штрафы</option>
+                    <option value="other">Другое</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row" style="margin-top:.8rem; align-items:end;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Номер договора / ИП</label>
+                <input type="text" name="cred_contract_${i}" placeholder="12345/21/77001-ИП">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>ИНН кредитора</label>
+                <input type="text" name="cred_inn_${i}" maxlength="12">
+            </div>
+        </div>
+    `;
+    document.getElementById('creditors').appendChild(div);
+}
+
+function addProperty() {
+    const i = propCount++;
+    const div = document.createElement('div');
+    div.className = 'property-item';
+    div.style = 'background:#f8fafc; border-radius:10px; padding:1rem; margin-bottom:.8rem; position:relative;';
+    div.innerHTML = `
+        <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:.5rem;right:.8rem;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.2rem;">&times;</button>
+        <div class="form-row" style="align-items:end;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Тип</label>
+                <select name="prop_type_${i}">
+                    <option value="apartment">Квартира</option>
+                    <option value="house">Дом</option>
+                    <option value="car">Автомобиль</option>
+                    <option value="land">Земельный участок</option>
+                    <option value="deposit">Вклад / Счёт</option>
+                    <option value="other">Другое</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Описание</label>
+                <input type="text" name="prop_desc_${i}">
+            </div>
+        </div>
+        <div class="form-row" style="margin-top:.8rem; align-items:end;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Стоимость (руб.)</label>
+                <input type="number" name="prop_value_${i}" min="0" step="0.01">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                    <input type="checkbox" name="prop_sole_${i}" value="1" style="width:auto;">
+                    Единственное жильё
+                </label>
+            </div>
+        </div>
+    `;
+    document.getElementById('properties').appendChild(div);
+}
+</script>
+{% endblock %}

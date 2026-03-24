@@ -1,0 +1,114 @@
+{% extends "pipeline/base_pipeline.html" %}
+{% block title %}Кредиторы — Debt Inspector{% endblock %}
+{% block pipeline_content %}
+
+<div class="card">
+    <h1>Список кредиторов</h1>
+    <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        Проверьте найденных кредиторов и добавьте недостающих. Чем точнее список, тем быстрее пройдёт процедура.
+    </p>
+
+    <form method="POST" action="/pipeline/{{ pid }}/creditors">
+
+        <div id="creditors-list">
+        {% for c in pipeline.creditors %}
+            <div class="creditor-row" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; position: relative;">
+                <div style="display: flex; gap: .8rem; flex-wrap: wrap; align-items: end;">
+                    <div style="flex: 2; min-width: 200px;">
+                        <label style="font-size: .8rem; color: #64748b;">Кредитор</label>
+                        <input type="text" name="cred_name_{{ loop.index0 }}" value="{{ c.name }}" placeholder="Название банка / МФО / ФНС">
+                    </div>
+                    <div style="flex: 1; min-width: 120px;">
+                        <label style="font-size: .8rem; color: #64748b;">Сумма долга, руб.</label>
+                        <input type="number" name="cred_amount_{{ loop.index0 }}" value="{{ c.amount }}" step="0.01" min="0">
+                    </div>
+                    <div style="flex: 1; min-width: 120px;">
+                        <label style="font-size: .8rem; color: #64748b;">ИНН кредитора</label>
+                        <input type="text" name="cred_inn_{{ loop.index0 }}" value="{{ c.creditor_inn }}" placeholder="10 цифр">
+                    </div>
+                    <div style="flex: 1; min-width: 120px;">
+                        <label style="font-size: .8rem; color: #64748b;">Тип долга</label>
+                        <select name="cred_type_{{ loop.index0 }}">
+                            <option value="credit" {% if c.debt_type == 'credit' %}selected{% endif %}>Кредит</option>
+                            <option value="microloan" {% if c.debt_type == 'microloan' %}selected{% endif %}>Микрозайм</option>
+                            <option value="mortgage" {% if c.debt_type == 'mortgage' %}selected{% endif %}>Ипотека</option>
+                            <option value="tax" {% if c.debt_type == 'tax' %}selected{% endif %}>Налоги</option>
+                            <option value="utility" {% if c.debt_type == 'utility' %}selected{% endif %}>ЖКХ</option>
+                            <option value="alimony" {% if c.debt_type == 'alimony' %}selected{% endif %}>Алименты</option>
+                            <option value="fine" {% if c.debt_type == 'fine' %}selected{% endif %}>Штрафы</option>
+                            <option value="other" {% if c.debt_type == 'other' %}selected{% endif %}>Другое</option>
+                        </select>
+                    </div>
+                    <div style="flex: 1; min-width: 140px;">
+                        <label style="font-size: .8rem; color: #64748b;">N договора / ИП</label>
+                        <input type="text" name="cred_contract_{{ loop.index0 }}" value="{{ c.contract_number }}" placeholder="Номер">
+                    </div>
+                </div>
+                {% if c.source == 'fssp' %}
+                <div style="font-size: .7rem; color: #3b82f6; margin-top: .4rem;">Найден автоматически (ФССП)</div>
+                {% endif %}
+            </div>
+        {% endfor %}
+        </div>
+
+        <!-- Пустые строки для ручного ввода -->
+        {% set start_idx = pipeline.creditors|length %}
+        {% for i in range(3) %}
+        <div class="creditor-row" style="background: #fefce8; border: 1px dashed #fde68a; border-radius: 10px; padding: 1rem; margin-bottom: 1rem;">
+            <div style="font-size: .8rem; color: #854d0e; margin-bottom: .5rem; font-weight: 600;">
+                Добавить кредитора {{ start_idx + i + 1 }}
+            </div>
+            <div style="display: flex; gap: .8rem; flex-wrap: wrap; align-items: end;">
+                <div style="flex: 2; min-width: 200px;">
+                    <input type="text" name="cred_name_{{ start_idx + i }}" placeholder="Название банка / МФО / ФНС">
+                </div>
+                <div style="flex: 1; min-width: 120px;">
+                    <input type="number" name="cred_amount_{{ start_idx + i }}" placeholder="Сумма" step="0.01" min="0">
+                </div>
+                <div style="flex: 1; min-width: 120px;">
+                    <input type="text" name="cred_inn_{{ start_idx + i }}" placeholder="ИНН">
+                </div>
+                <div style="flex: 1; min-width: 120px;">
+                    <select name="cred_type_{{ start_idx + i }}">
+                        <option value="credit">Кредит</option>
+                        <option value="microloan">Микрозайм</option>
+                        <option value="mortgage">Ипотека</option>
+                        <option value="tax">Налоги</option>
+                        <option value="utility">ЖКХ</option>
+                        <option value="alimony">Алименты</option>
+                        <option value="fine">Штрафы</option>
+                        <option value="other">Другое</option>
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 140px;">
+                    <input type="text" name="cred_contract_{{ start_idx + i }}" placeholder="N договора">
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Итого -->
+        <div style="background: #f1f5f9; border-radius: 10px; padding: 1rem; margin-bottom: 1.5rem; text-align: right;">
+            <span style="font-size: .9rem; color: #64748b;">Текущая сумма долгов:</span>
+            <span style="font-size: 1.2rem; font-weight: 700; color: #dc2626; margin-left: .5rem;">
+                {{ pipeline.total_debt|money0 }} руб.
+            </span>
+        </div>
+
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 1rem; margin-bottom: 1.5rem;">
+            <p style="font-size: .85rem; color: #1e40af; margin: 0; line-height: 1.5;">
+                <b>Важно:</b> укажите всех кредиторов. Долги, не включённые в заявление, не будут списаны.
+                Алименты, возмещение вреда здоровью и субсидиарная ответственность не списываются при банкротстве.
+            </p>
+        </div>
+
+        <div style="display: flex; gap: 1rem;">
+            <a href="/pipeline/{{ pid }}/profile" class="btn btn-secondary">Назад</a>
+            <button type="submit" class="btn btn-primary" style="flex: 1; text-align: center; padding: .8rem; font-size: 1.05rem;">
+                Продолжить
+            </button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}
