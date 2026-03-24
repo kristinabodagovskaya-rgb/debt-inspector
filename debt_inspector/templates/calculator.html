@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Калькулятор банкротства — Debt Inspector{% endblock %}
+{% block content %}
+
+<div class="card">
+    <h1>Калькулятор банкротства</h1>
+    <p style="color: #64748b; margin-top: -.8rem; margin-bottom: 1.5rem;">
+        Узнайте маршрут, расходы и сроки банкротства за 30 секунд
+    </p>
+
+    <form method="POST" action="/calculator">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+            <div>
+                <label>Общая сумма долгов, руб.</label>
+                <input type="number" name="total_debt" value="{{ result.total_debt if result else '' }}" placeholder="500 000" min="0" step="1000" required>
+            </div>
+            <div>
+                <label>Ежемесячный доход, руб.</label>
+                <input type="number" name="monthly_income" value="{{ result.monthly_income if result else '' }}" placeholder="25 000" min="0" step="1000">
+            </div>
+            <div>
+                <label>Иждивенцы (дети и др.)</label>
+                <input type="number" name="dependents_count" value="{{ result.dependents_count if result else 0 }}" min="0" max="20">
+            </div>
+        </div>
+
+        <div style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: 1.5rem;">
+            <div style="font-weight: 600; margin-bottom: .8rem; font-size: .9rem;">Дополнительные основания (для МФЦ):</div>
+            <div style="display: flex; flex-direction: column; gap: .6rem;">
+                <label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; font-size: .85rem; cursor: pointer;">
+                    <input type="checkbox" name="ip_ended_art46" value="1" style="width: auto;">
+                    ИП окончено по ст. 46 (пристав не нашёл имущество)
+                </label>
+                <label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; font-size: .85rem; cursor: pointer;">
+                    <input type="checkbox" name="ip_longer_7_years" value="1" style="width: auto;">
+                    ИП длится более 7 лет
+                </label>
+                <label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; font-size: .85rem; cursor: pointer;">
+                    <input type="checkbox" name="is_pensioner" value="1" style="width: auto;">
+                    Пенсионер
+                </label>
+                <label style="display: flex; align-items: center; gap: .5rem; font-weight: 400; font-size: .85rem; cursor: pointer;">
+                    <input type="checkbox" name="receives_benefits" value="1" style="width: auto;">
+                    Получатель пособий
+                </label>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: .8rem; font-size: 1.05rem; text-align: center;">
+            Рассчитать
+        </button>
+    </form>
+</div>
+
+{% if result %}
+<!-- Результат -->
+<div class="card">
+    <h2 style="margin-bottom: 1rem;">Результат</h2>
+
+    <div class="stats" style="margin-bottom: 1.5rem;">
+        <div class="stat-card">
+            <div class="number" style="color: #dc2626;">{{ result.total_debt|money0 }}</div>
+            <div class="label">Сумма долгов (руб.)</div>
+        </div>
+        <div class="stat-card">
+            <div class="number" style="color: {% if result.route == 'mfc' %}#16a34a{% elif result.route == 'court' %}#2563eb{% else %}#64748b{% endif %};">
+                {{ result.route_label }}
+            </div>
+            <div class="label">Маршрут</div>
+        </div>
+        <div class="stat-card">
+            <div class="number" style="color: #dc2626;">{{ result.expenses|money0 }}</div>
+            <div class="label">Расходы (руб.)</div>
+        </div>
+        <div class="stat-card">
+            <div class="number" style="color: #2563eb;">{{ result.timeline }}</div>
+            <div class="label">Срок процедуры</div>
+        </div>
+    </div>
+
+    {% if result.route == 'unknown' %}
+    <div style="background: #f8fafc; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <p style="color: #64748b; font-size: .9rem; line-height: 1.6;">
+            Сумма долга менее 25 000 руб. Банкротство не рекомендуется.
+            Попробуйте договориться с кредиторами о рассрочке или обратитесь к приставам.
+        </p>
+    </div>
+    {% endif %}
+
+    {% if result.route == 'mfc' %}
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <div style="font-weight: 700; color: #166534; margin-bottom: .5rem;">Внесудебное банкротство через МФЦ</div>
+        {% if result.mfc_check.eligible %}
+        <p style="color: #14532d; font-size: .9rem;">
+            Вы подходите для бесплатного банкротства через МФЦ.
+            Основание: {{ result.mfc_check.basis }}.
+        </p>
+        {% else %}
+        <p style="color: #14532d; font-size: .9rem;">
+            Сумма долга подходит для МФЦ, но нужно одно из оснований (отметьте выше).
+            {% for r in result.mfc_check.reasons %}{{ r }} {% endfor %}
+        </p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if result.route == 'court' %}
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <div style="font-weight: 700; color: #1e40af; margin-bottom: .5rem;">Судебное банкротство</div>
+        <table style="font-size: .9rem;">
+            <tr><td style="padding: .3rem .6rem; font-weight: 600;">Госпошлина</td><td style="padding: .3rem .6rem;">300 руб.</td></tr>
+            <tr><td style="padding: .3rem .6rem; font-weight: 600;">Депозит</td><td style="padding: .3rem .6rem;">25 000 руб.</td></tr>
+            <tr><td style="padding: .3rem .6rem; font-weight: 600;">Срок</td><td style="padding: .3rem .6rem;">{{ result.timeline }}</td></tr>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Рекомендации по ускорению -->
+    {% if result.accel_tips %}
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <h3 style="color: #1e40af; margin-bottom: 1rem;">Как ускорить процедуру</h3>
+        {% for tip in result.accel_tips %}
+        <div style="margin-bottom: 1rem; {% if not loop.last %}padding-bottom: 1rem; border-bottom: 1px solid #dbeafe;{% endif %}">
+            <div style="font-weight: 700; color: #1e3a5f; margin-bottom: .2rem;">{{ loop.index }}. {{ tip.title }}</div>
+            <div style="font-size: .85rem; color: #334155; line-height: 1.5;">{{ tip.description }}</div>
+            <div style="font-size: .8rem; color: #2563eb; font-weight: 600; margin-top: .2rem;">{{ tip.saving }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if result.route != 'unknown' %}
+    <a href="/search" class="btn btn-primary" style="width: 100%; text-align: center; padding: .8rem; font-size: 1.05rem;">
+        Начать процедуру банкротства
+    </a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

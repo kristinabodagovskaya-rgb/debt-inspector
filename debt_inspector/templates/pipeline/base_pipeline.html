@@ -38,4 +38,76 @@
 
 {% block pipeline_content %}{% endblock %}
 
+<!-- AI-чат помощник -->
+<div id="chat-widget" style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;">
+    <!-- Кнопка открытия -->
+    <button id="chat-toggle" onclick="toggleChat()" style="
+        width: 56px; height: 56px; border-radius: 50%; border: none;
+        background: #3b82f6; color: #fff; font-size: 1.5rem; cursor: pointer;
+        box-shadow: 0 4px 12px rgba(59,130,246,.4); display: flex; align-items: center; justify-content: center;
+    ">?</button>
+
+    <!-- Окно чата -->
+    <div id="chat-window" style="
+        display: none; position: absolute; bottom: 70px; right: 0;
+        width: 360px; max-height: 500px; background: #fff; border-radius: 12px;
+        box-shadow: 0 8px 30px rgba(0,0,0,.15); overflow: hidden; flex-direction: column;
+    ">
+        <div style="background: #3b82f6; color: #fff; padding: .8rem 1rem; font-weight: 700; font-size: .9rem;">
+            AI-помощник по банкротству
+        </div>
+        <div id="chat-messages" style="flex: 1; padding: 1rem; overflow-y: auto; max-height: 340px; min-height: 200px;">
+            <div style="background: #f1f5f9; border-radius: 10px; padding: .6rem .8rem; font-size: .85rem; color: #475569; margin-bottom: .5rem;">
+                Задайте любой вопрос о процедуре банкротства. Я помогу разобраться.
+            </div>
+        </div>
+        <div style="padding: .5rem; border-top: 1px solid #e2e8f0; display: flex; gap: .5rem;">
+            <input type="text" id="chat-input" placeholder="Ваш вопрос..." style="flex: 1; font-size: .85rem; padding: .5rem .8rem; border: 1px solid #e2e8f0; border-radius: 8px;"
+                   onkeypress="if(event.key==='Enter')sendChat()">
+            <button onclick="sendChat()" style="background: #3b82f6; color: #fff; border: none; border-radius: 8px; padding: .5rem 1rem; cursor: pointer; font-size: .85rem;">
+                &rarr;
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleChat() {
+    const w = document.getElementById('chat-window');
+    w.style.display = w.style.display === 'none' ? 'flex' : 'none';
+    if (w.style.display === 'flex') document.getElementById('chat-input').focus();
+}
+
+async function sendChat() {
+    const input = document.getElementById('chat-input');
+    const q = input.value.trim();
+    if (!q) return;
+    input.value = '';
+
+    const msgs = document.getElementById('chat-messages');
+    msgs.innerHTML += '<div style="text-align:right;margin-bottom:.5rem;"><div style="display:inline-block;background:#3b82f6;color:#fff;border-radius:10px;padding:.5rem .8rem;font-size:.85rem;max-width:80%;">' + q.replace(/</g,'&lt;') + '</div></div>';
+    msgs.innerHTML += '<div id="chat-loading" style="margin-bottom:.5rem;"><div style="display:inline-block;background:#f1f5f9;border-radius:10px;padding:.5rem .8rem;font-size:.85rem;color:#94a3b8;">Думаю...</div></div>';
+    msgs.scrollTop = msgs.scrollHeight;
+
+    try {
+        const step = '{{ steps[current_step_num - 1].key if current_step_num <= steps|length else "" }}';
+        const resp = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({question: q, step: step})
+        });
+        const data = await resp.json();
+        const loading = document.getElementById('chat-loading');
+        if (loading) loading.remove();
+        const answer = (data.answer || data.error || 'Нет ответа').replace(/</g,'&lt;').replace(/\n/g,'<br>');
+        msgs.innerHTML += '<div style="margin-bottom:.5rem;"><div style="display:inline-block;background:#f1f5f9;border-radius:10px;padding:.6rem .8rem;font-size:.85rem;color:#334155;max-width:85%;line-height:1.5;">' + answer + '</div></div>';
+    } catch(e) {
+        const loading = document.getElementById('chat-loading');
+        if (loading) loading.remove();
+        msgs.innerHTML += '<div style="margin-bottom:.5rem;"><div style="display:inline-block;background:#fef2f2;border-radius:10px;padding:.5rem .8rem;font-size:.85rem;color:#991b1b;">Ошибка подключения</div></div>';
+    }
+    msgs.scrollTop = msgs.scrollHeight;
+}
+</script>
+
 {% endblock %}

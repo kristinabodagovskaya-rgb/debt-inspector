@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -1077,6 +1077,95 @@ async def pipeline_filing_submit(request: Request, pid: str):
     _save_pipeline_data(pid, pipeline)
 
     return RedirectResponse(f"/pipeline/{pid}/filing", status_code=302)
+
+
+# --- AI-чат помощник ---
+
+
+@app.post("/api/chat")
+async def api_chat(request: Request):
+    """AI-чат помощник по банкротству."""
+    user = _get_user(request)
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+
+    body = await request.json()
+    question = body.get("question", "").strip()
+    step = body.get("step", "")
+    context = body.get("context", "")
+
+    if not question:
+        return JSONResponse({"error": "Вопрос не может быть пустым"}, status_code=400)
+
+    from debt_inspector.ai_chat import chat
+    answer = await chat(question, step, context)
+    return JSONResponse({"answer": answer})
+
+
+# --- Калькулятор банкротства ---
+
+
+@app.get("/calculator", response_class=HTMLResponse)
+async def calculator_page(request: Request):
+    user = _get_user(request)
+    return templates.TemplateResponse("calculator.html", {"request": request, "user": user, "result": None})
+
+
+@app.post("/calculator", response_class=HTMLResponse)
+async def calculator_submit(
+    request: Request,
+    total_debt: float = Form(0),
+    monthly_income: float = Form(0),
+    dependents_count: int = Form(0),
+    is_pensioner: str = Form(""),
+    receives_benefits: str = Form(""),
+    ip_ended_art46: str = Form(""),
+    ip_longer_7_years: str = Form(""),
+):
+    user = _get_user(request)
+
+    route = determine_route(total_debt)
+    mfc_check = check_mfc_eligibility(
+        total_debt,
+        bool(ip_ended_art46),
+        bool(ip_longer_7_years),
+        bool(is_pensioner),
+        bool(receives_benefits),
+    )
+    accel_tips = recommend_acceleration(
+        total_debt=total_debt,
+        monthly_income=monthly_income,
+        dependents_count=dependents_count,
+        is_pensioner=bool(is_pensioner),
+        receives_benefits=bool(receives_benefits),
+        ip_ended_art46=bool(ip_ended_art46),
+        ip_longer_7_years=bool(ip_longer_7_years),
+        route=route.value,
+    )
+
+    # Расходы
+    if route.value == "mfc":
+        expenses = 0
+        timeline = "6 месяцев"
+    else:
+        expenses = 25_300
+        subsistence = 17_733
+        can_skip = monthly_income < subsistence * (1 + dependents_count)
+        timeline = "3-6 месяцев" if can_skip else "6-12 месяцев"
+
+    result = {
+        "total_debt": total_debt,
+        "monthly_income": monthly_income,
+        "dependents_count": dependents_count,
+        "route": route.value,
+        "route_label": "Внесудебное (МФЦ)" if route.value == "mfc" else ("Судебное" if route.value == "court" else "Не рекомендуется"),
+        "mfc_check": mfc_check,
+        "expenses": expenses,
+        "timeline": timeline,
+        "accel_tips": accel_tips,
+    }
+
+    return templates.TemplateResponse("calculator.html", {"request": request, "user": user, "result": result})
 
 
 def _start_proxy():
