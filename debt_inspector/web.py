@@ -1194,6 +1194,13 @@ def run():
     """Точка входа для debt-inspector-web."""
     import uvicorn
 
+    # Загружаем .env
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     _start_proxy()
 
     host = os.getenv("HOST", "0.0.0.0")
