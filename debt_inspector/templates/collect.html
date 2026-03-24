@@ -24,7 +24,8 @@
             <li>Выберите "Поиск физических лиц"</li>
             <li>Введите <b>регион</b>, <b>фамилию</b>, <b>имя</b>, <b>отчество</b>, <b>дату рождения</b></li>
             <li>Нажмите "Найти", введите капчу</li>
-            <li>Для каждого исполнительного производства ниже введите: <b>кредитор</b>, <b>сумма</b>, <b>номер ИП</b></li>
+            <li>В таблице результатов вы увидите: <b>предмет исполнения</b> и <b>сумму</b></li>
+            <li>Введите каждую строку ниже. Кредитора можно не указывать — если знаете, впишите</li>
         </ol>
     </div>
 
@@ -32,21 +33,21 @@
         {% for i in range(fssp_count) %}
         <div class="debt-row" style="background: #f8fafc; border-radius: 10px; padding: 1rem; margin-bottom: .8rem;">
             <div style="display: flex; gap: .8rem; flex-wrap: wrap; align-items: end;">
-                <div style="flex: 2; min-width: 200px;">
-                    <label style="font-size: .8rem; color: #64748b;">Кредитор (взыскатель)</label>
-                    <input type="text" form="collect-form" name="fssp_creditor_{{ i }}" value="{{ debts.fssp[i].creditor if debts.fssp[i] is defined else '' }}" placeholder="Сбербанк / ФНС / МФО...">
+                <div style="flex: 2; min-width: 220px;">
+                    <label style="font-size: .8rem; color: #64748b;">Предмет исполнения (из таблицы ФССП) *</label>
+                    <input type="text" form="collect-form" name="fssp_subject_{{ i }}" value="{{ debts.fssp[i].subject if debts.fssp[i] is defined else '' }}" placeholder="Задолженность по кредитному договору...">
                 </div>
-                <div style="flex: 1; min-width: 120px;">
-                    <label style="font-size: .8rem; color: #64748b;">Сумма долга, руб.</label>
+                <div style="flex: 1; min-width: 130px;">
+                    <label style="font-size: .8rem; color: #64748b;">Сумма долга, руб. *</label>
                     <input type="number" form="collect-form" name="fssp_amount_{{ i }}" value="{{ debts.fssp[i].amount if debts.fssp[i] is defined else '' }}" step="0.01" min="0" placeholder="150 000">
                 </div>
-                <div style="flex: 1; min-width: 140px;">
-                    <label style="font-size: .8rem; color: #64748b;">Номер ИП</label>
-                    <input type="text" form="collect-form" name="fssp_number_{{ i }}" value="{{ debts.fssp[i].number if debts.fssp[i] is defined else '' }}" placeholder="12345/23/50001-ИП">
+                <div style="flex: 1; min-width: 160px;">
+                    <label style="font-size: .8rem; color: #64748b;">Кредитор (если виден)</label>
+                    <input type="text" form="collect-form" name="fssp_creditor_{{ i }}" value="{{ debts.fssp[i].creditor if debts.fssp[i] is defined else '' }}" placeholder="Необязательно">
                 </div>
-                <div style="flex: 1; min-width: 120px;">
-                    <label style="font-size: .8rem; color: #64748b;">Предмет (что взыскивают)</label>
-                    <input type="text" form="collect-form" name="fssp_subject_{{ i }}" value="{{ debts.fssp[i].subject if debts.fssp[i] is defined else '' }}" placeholder="Кредит / Налог / Штраф">
+                <div style="flex: 1; min-width: 140px;">
+                    <label style="font-size: .8rem; color: #64748b;">Номер ИП (если виден)</label>
+                    <input type="text" form="collect-form" name="fssp_number_{{ i }}" value="{{ debts.fssp[i].number if debts.fssp[i] is defined else '' }}" placeholder="12345/23/50001-ИП">
                 </div>
             </div>
         </div>
@@ -234,14 +235,14 @@ const rowCounters = {fssp: {{ fssp_count }}, fns: {{ fns_count }}, kad: {{ kad_c
 const templates = {
     fssp: (i) => `<div class="debt-row" style="background:#f8fafc;border-radius:10px;padding:1rem;margin-bottom:.8rem">
         <div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:end">
-            <div style="flex:2;min-width:200px"><label style="font-size:.8rem;color:#64748b">Кредитор</label>
-                <input type="text" form="collect-form" name="fssp_creditor_${i}" placeholder="Сбербанк / ФНС..."></div>
-            <div style="flex:1;min-width:120px"><label style="font-size:.8rem;color:#64748b">Сумма, руб.</label>
+            <div style="flex:2;min-width:220px"><label style="font-size:.8rem;color:#64748b">Предмет исполнения *</label>
+                <input type="text" form="collect-form" name="fssp_subject_${i}" placeholder="Задолженность по кредитному договору..."></div>
+            <div style="flex:1;min-width:130px"><label style="font-size:.8rem;color:#64748b">Сумма, руб. *</label>
                 <input type="number" form="collect-form" name="fssp_amount_${i}" step="0.01" min="0"></div>
+            <div style="flex:1;min-width:160px"><label style="font-size:.8rem;color:#64748b">Кредитор (если виден)</label>
+                <input type="text" form="collect-form" name="fssp_creditor_${i}" placeholder="Необязательно"></div>
             <div style="flex:1;min-width:140px"><label style="font-size:.8rem;color:#64748b">Номер ИП</label>
                 <input type="text" form="collect-form" name="fssp_number_${i}" placeholder="12345/23/50001-ИП"></div>
-            <div style="flex:1;min-width:120px"><label style="font-size:.8rem;color:#64748b">Предмет</label>
-                <input type="text" form="collect-form" name="fssp_subject_${i}" placeholder="Кредит / Налог"></div>
         </div></div>`,
     fns: (i) => `<div class="debt-row" style="background:#f8fafc;border-radius:10px;padding:1rem;margin-bottom:.8rem">
         <div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:end">

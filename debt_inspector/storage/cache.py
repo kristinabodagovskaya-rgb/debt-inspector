@@ -48,6 +48,15 @@ class ResultCache:
         self.conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_manual_debts_key ON manual_debts(query_key)
         """)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS bankruptcy_pipelines (
+                id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                current_step TEXT NOT NULL DEFAULT 'assessment',
+                data_json TEXT NOT NULL DEFAULT '{}'
+            )
+        """)
         self.conn.commit()
 
     def save(self, report: DebtReport):
@@ -140,6 +149,50 @@ class ResultCache:
 
     def _make_key(self, report: DebtReport) -> str:
         return self.make_key(report)
+
+    # --- Pipeline банкротства ---
+
+    def save_pipeline(self, pipeline_id: str, step: str, data: dict):
+        """Сохраняет или обновляет pipeline."""
+        now = datetime.now().isoformat()
+        data_str = json.dumps(data, ensure_ascii=False, default=str)
+        existing = self.conn.execute(
+            "SELECT id FROM bankruptcy_pipelines WHERE id = ?", (pipeline_id,)
+        ).fetchone()
+        if existing:
+            self.conn.execute(
+                """UPDATE bankruptcy_pipelines
+                   SET updated_at = ?, current_step = ?, data_json = ?
+                   WHERE id = ?""",
+                (now, step, data_str, pipeline_id),
+            )
+        else:
+            self.conn.execute(
+                """INSERT INTO bankruptcy_pipelines (id, created_at, updated_at, current_step, data_json)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (pipeline_id, now, now, step, data_str),
+            )
+        self.conn.commit()
+
+    def get_pipeline(self, pipeline_id: str) -> dict | None:
+        """Получает pipeline по ID."""
+        row = self.conn.execute(
+            "SELECT current_step, data_json, created_at, updated_at FROM bankruptcy_pipelines WHERE id = ?",
+            (pipeline_id,),
+        ).fetchone()
+        if row:
+            return {
+                "current_step": row[0],
+                "data": json.loads(row[1]),
+                "created_at": row[2],
+                "updated_at": row[3],
+            }
+        return None
+
+    def delete_pipeline(self, pipeline_id: str):
+        """Удаляет pipeline."""
+        self.conn.execute("DELETE FROM bankruptcy_pipelines WHERE id = ?", (pipeline_id,))
+        self.conn.commit()
 
     def close(self):
         self.conn.close()

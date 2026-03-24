@@ -373,8 +373,8 @@
     </div>
 
     {% if total_all_debt >= 25000 %}
-    <a href="/bankruptcy" class="btn btn-primary" style="width: 100%; text-align: center; padding: .7rem;">
-        Заполнить анкету на банкротство
+    <a href="/pipeline/start?report_id={{ report_id }}" class="btn btn-primary" style="width: 100%; text-align: center; padding: .7rem;">
+        Начать процедуру банкротства
     </a>
     {% endif %}
 </div>

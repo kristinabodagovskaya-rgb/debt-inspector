@@ -1109,12 +1109,14 @@ async def collect_submit(request: Request):
 
     # ФССП
     for i in range(50):
-        creditor = form.get(f"fssp_creditor_{i}", "").strip()
+        subject = form.get(f"fssp_subject_{i}", "").strip()
         amount = float(form.get(f"fssp_amount_{i}", 0) or 0)
-        if not creditor or amount <= 0:
+        if amount <= 0:
             continue
+        creditor = form.get(f"fssp_creditor_{i}", "").strip()
+        name = creditor if creditor else (subject if subject else "ФССП (кредитор не указан)")
         creditors.append(CreditorInfo(
-            name=creditor,
+            name=name,
             amount=amount,
             debt_type="credit",
             contract_number=form.get(f"fssp_number_{i}", ""),
